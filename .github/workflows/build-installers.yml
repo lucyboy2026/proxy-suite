@@ -30,9 +30,6 @@ on:
   push:
     tags:
       - 'v*'
-    # 临时：用于本次在 CI 上验证出包是否成功，验证通过后会移除该分支触发。
-    branches:
-      - 'devin/1781098247-clash-verge-two-step-auth'
 
 permissions:
   contents: read
@@ -85,9 +82,7 @@ jobs:
           if [ "$EV" = "workflow_dispatch" ]; then
             echo "run=${{ github.event.inputs[matrix.input] }}" >> "$GITHUB_OUTPUT"
           elif [ "$EV" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif [ "$ID" = "windows-x64" ]; then
-            # 分支 push 验证：仅重跑 Windows x64（macOS 已验证出包）
+            # 打 tag 触发：构建全部平台
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
