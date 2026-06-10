@@ -86,8 +86,8 @@ jobs:
             echo "run=${{ github.event.inputs[matrix.input] }}" >> "$GITHUB_OUTPUT"
           elif [ "$EV" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-          elif [ "$ID" = "windows-x64" ] || [ "$ID" = "macos-aarch64" ]; then
-            # 分支 push 验证：仅构建两个主力目标
+          elif [ "$ID" = "windows-x64" ]; then
+            # 分支 push 验证：仅重跑 Windows x64（macOS 已验证出包）
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -142,7 +142,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tauriScript: pnpm
-          args: --target ${{ matrix.target }} -b ${{ matrix.bundle }}
+          # 关闭 updater 产物生成，避免未提供 TAURI_SIGNING_PRIVATE_KEY 时签名报错（仅出安装包）。
+          args: '--target ${{ matrix.target }} -b ${{ matrix.bundle }} --config {"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Upload installer (Windows)
         if: steps.gate.outputs.run == 'true' && matrix.os == 'windows-latest'

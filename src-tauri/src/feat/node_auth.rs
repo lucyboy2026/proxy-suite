@@ -171,10 +171,10 @@ fn read_machine_id() -> Option<String> {
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     for line in text.lines() {
-        if line.contains("IOPlatformUUID") {
-            if let Some(idx) = line.find('=') {
-                return Some(line[idx + 1..].trim().trim_matches('"').to_string());
-            }
+        if line.contains("IOPlatformUUID")
+            && let Some(idx) = line.find('=')
+        {
+            return Some(line[idx + 1..].trim().trim_matches('"').to_string());
         }
     }
     None
