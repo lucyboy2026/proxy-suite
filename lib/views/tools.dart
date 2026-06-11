@@ -11,6 +11,7 @@ import 'package:fl_clash/views/application_setting.dart';
 import 'package:fl_clash/views/backup_and_restore.dart';
 import 'package:fl_clash/views/config/config.dart';
 import 'package:fl_clash/views/hotkey.dart';
+import 'package:fl_clash/views/node_auth.dart';
 import 'package:fl_clash/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -68,6 +69,7 @@ class _ToolViewState extends ConsumerState<ToolsView> {
     return generateSection(
       title: context.appLocalizations.settings,
       items: [
+        const _NodeAuthItem(),
         const _LocaleItem(),
         const _ThemeItem(),
         const _BackupItem(),
@@ -148,6 +150,25 @@ class _LocaleItem extends ConsumerWidget {
         textBuilder: (locale) => _getLocaleString(context, locale),
         value: currentLocale,
       ),
+    );
+  }
+}
+
+class _NodeAuthItem extends StatelessWidget {
+  const _NodeAuthItem();
+
+  @override
+  Widget build(BuildContext context) {
+    final isZh = Localizations.localeOf(context).languageCode == 'zh';
+    return ListItem.open(
+      leading: const Icon(Icons.verified_user_outlined),
+      title: Text(isZh ? '节点账号' : 'Node Account'),
+      subtitle: Text(
+        isZh
+            ? '注册/登录、绑定设备、查看使用期限与设备数'
+            : 'Register/login, bind device, view validity & devices',
+      ),
+      delegate: const OpenDelegate(widget: NodeAuthView()),
     );
   }
 }
