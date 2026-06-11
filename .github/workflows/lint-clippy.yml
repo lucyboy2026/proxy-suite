@@ -3,6 +3,12 @@ name: Clippy Lint
 on:
   pull_request:
   workflow_dispatch:
+
+# dorny/paths-filter 需要读取 PR 变更文件列表
+permissions:
+  contents: read
+  pull-requests: read
+
 env:
   HUSKY: 0
 
