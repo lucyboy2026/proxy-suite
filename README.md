@@ -34,6 +34,14 @@ on Mobile:
 
 ✨ Support subscription link, Dark mode
 
+🔐 Device-bound node auth (this fork): exchange email/password + a device fingerprint for a renewable 7-day token, auto-injected into hysteria2 `password`
+
+## Node auth (this fork)
+
+This fork adds a device-bound, server-authorized node authentication system, sharing one Auth Server with the
+Clash Verge Rev client. Register → admin authorizes → login binds the device and issues a ≤7-day token → the token is
+injected into every hysteria2 node's `password` and silently renewed near expiry. See [`NODE_AUTH.md`](NODE_AUTH.md).
+
 ## Use
 
 ### Linux

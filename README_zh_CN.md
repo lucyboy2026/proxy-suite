@@ -34,6 +34,14 @@ on Mobile:
 
 ✨ 支持一键导入订阅, 深色模式
 
+🔐 节点设备绑定鉴权（本分支特性）：邮箱/密码 + 设备指纹换取可续期的 7 天 Token，自动注入 hysteria2 `password`
+
+## 节点设备绑定鉴权（本分支特性）
+
+本分支新增「设备绑定 + 服务端授权」的节点鉴权系统，与 Clash Verge Rev 客户端共用同一台 Auth Server：
+注册 → 管理员授权 → 登录绑定设备并签发 ≤7 天 Token → Token 注入每个 hysteria2 节点的 `password` 并在临近过期时静默续期。
+详见 [`NODE_AUTH.md`](NODE_AUTH.md)。
+
 ## Use
 
 ### Linux
