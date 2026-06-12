@@ -158,7 +158,12 @@ class NodeAuth {
     if (data == null) {
       throw const NodeAuthException('登录响应解析失败 / invalid login response');
     }
-    final session = NodeAuthSession.fromLoginJson(url, data, password: password);
+    final session = NodeAuthSession.fromLoginJson(
+      url,
+      data,
+      password: password,
+      loginEmail: email.trim(),
+    );
     await saveSession(session);
     return session;
   }
@@ -167,12 +172,20 @@ class NodeAuth {
   /// Mirrors the Clash Verge client, which renews by logging in again with the
   /// locally stored password. Returns the refreshed session, or `null` when no
   /// renewable session exists (e.g. no stored password).
+  ///
+  /// Uses [NodeAuthSession.loginEmail] (the email the user actually typed) so
+  /// renewal does not depend on the server's `username` matching the login
+  /// email. Falls back to [NodeAuthSession.email] for sessions persisted before
+  /// `loginEmail` was stored.
   Future<NodeAuthSession?> renew() async {
     final session = await loadSession();
     if (session == null || session.password.isEmpty) return null;
+    final email = session.loginEmail.isNotEmpty
+        ? session.loginEmail
+        : session.email;
     return login(
       serverUrl: session.serverUrl,
-      email: session.email,
+      email: email,
       password: session.password,
     );
   }
