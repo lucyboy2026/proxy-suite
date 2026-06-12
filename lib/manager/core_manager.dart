@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/node_auth.dart';
 import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/enum/enum.dart';
 import 'package:fl_clash/models/models.dart';
@@ -21,15 +24,37 @@ class CoreManager extends ConsumerStatefulWidget {
 
 class _CoreContainerState extends ConsumerState<CoreManager>
     with CoreEventListener {
+  /// Silent node-auth token renewal, mirroring the Clash Verge client's
+  /// `NodeAuthGate`: renew once on startup, then every 12 hours.
+  static const _nodeAuthRenewInterval = Duration(hours: 12);
+  Timer? _nodeAuthRenewTimer;
+
   @override
   Widget build(BuildContext context) {
     return widget.child;
+  }
+
+  /// Renew the device token when it nears expiry and, if a fresh token was
+  /// obtained, regenerate the config so the new token is re-injected into the
+  /// hysteria2 nodes.
+  Future<void> _renewNodeAuthToken() async {
+    final renewed = await nodeAuth.renewIfNeeded();
+    if (renewed && mounted) {
+      ref.read(setupActionProvider.notifier).updateConfigDebounce();
+    }
   }
 
   @override
   void initState() {
     super.initState();
     coreEventManager.addListener(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _renewNodeAuthToken();
+    });
+    _nodeAuthRenewTimer = Timer.periodic(
+      _nodeAuthRenewInterval,
+      (_) => _renewNodeAuthToken(),
+    );
     ref.listenManual(currentProfileIdProvider, (prev, next) {
       if (prev != next) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -56,6 +81,7 @@ class _CoreContainerState extends ConsumerState<CoreManager>
 
   @override
   Future<void> dispose() async {
+    _nodeAuthRenewTimer?.cancel();
     coreEventManager.removeListener(this);
     super.dispose();
   }

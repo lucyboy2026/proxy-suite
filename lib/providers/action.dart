@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fl_clash/common/common.dart';
+import 'package:fl_clash/common/node_auth.dart';
 import 'package:fl_clash/core/core.dart';
 import 'package:fl_clash/database/database.dart';
 import 'package:fl_clash/enum/enum.dart';
@@ -16,6 +17,27 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 part 'generated/action.g.dart';
+
+/// Inject the device-bound token into hysteria2 nodes (node-auth component two).
+///
+/// When a valid local device token exists, overwrite the `password` of every
+/// `type: hysteria2` (and legacy `hysteria`) proxy with that token, binding the
+/// token to this device+account. Mirrors the Clash Verge client's
+/// `inject_node_auth_token`. No-op (config untouched) when logged out or the
+/// token has expired.
+Future<void> injectNodeAuthToken(Map<String, dynamic> rawConfig) async {
+  final token = await nodeAuth.currentToken();
+  if (token == null) return;
+  final proxies = rawConfig['proxies'];
+  if (proxies is! List) return;
+  for (final proxy in proxies) {
+    if (proxy is! Map) continue;
+    final type = proxy['type'];
+    if (type == 'hysteria2' || type == 'hysteria') {
+      proxy['password'] = token;
+    }
+  }
+}
 
 @Riverpod(keepAlive: true)
 class CommonAction extends _$CommonAction {
@@ -314,6 +336,7 @@ class SetupAction extends _$SetupAction {
     if (scriptContent?.isNotEmpty == true) {
       rawConfig = await handleEvaluate(scriptContent!, rawConfig);
     }
+    await injectNodeAuthToken(rawConfig);
     final directory = await appPath.profilesPath;
     final res = makeRealProfileTask(
       MakeRealProfileState(
