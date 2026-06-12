@@ -128,3 +128,50 @@ pub async fn log_event(pool: &SqlitePool, kind: &str, user_email: Option<&str>, 
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn test_pool() -> SqlitePool {
+        let path = std::env::temp_dir().join(format!("nodeauth-test-{}.db", crate::auth::gen_token()));
+        init_pool(&format!("sqlite://{}", path.display())).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn init_pool_creates_the_expected_tables() {
+        let pool = test_pool().await;
+        for table in ["users", "devices", "settings", "events"] {
+            let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?")
+                .bind(table)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            assert_eq!(row.0, 1, "table `{table}` should exist");
+        }
+    }
+
+    #[tokio::test]
+    async fn setting_get_returns_none_then_value_and_upserts() {
+        let pool = test_pool().await;
+        assert!(get_setting(&pool, "k").await.unwrap().is_none());
+
+        set_setting(&pool, "k", "v1").await.unwrap();
+        assert_eq!(get_setting(&pool, "k").await.unwrap().as_deref(), Some("v1"));
+
+        // A second write to the same key overwrites rather than duplicating.
+        set_setting(&pool, "k", "v2").await.unwrap();
+        assert_eq!(get_setting(&pool, "k").await.unwrap().as_deref(), Some("v2"));
+    }
+
+    #[tokio::test]
+    async fn log_event_inserts_a_row() {
+        let pool = test_pool().await;
+        log_event(&pool, "register", Some("u@e.com"), "hello").await.unwrap();
+        let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM events WHERE kind = 'register'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(row.0, 1);
+    }
+}
