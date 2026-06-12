@@ -39,8 +39,22 @@ on Mobile:
 ## Node auth (this fork)
 
 This fork adds a device-bound, server-authorized node authentication system, sharing one Auth Server with the
-Clash Verge Rev client. Register → admin authorizes → login binds the device and issues a ≤7-day token → the token is
-injected into every hysteria2 node's `password` and silently renewed near expiry. See [`NODE_AUTH.md`](NODE_AUTH.md).
+[Clash Verge Rev client](https://github.com/lucyboy2026/devin.ai001) (the same server issues credentials to both
+FlClash and Clash Verge). Register → admin authorizes → login binds the device and issues a ≤7-day token → the token is
+injected into every hysteria2 node's `password` and silently renewed near expiry.
+
+**End-to-end usage:**
+
+1. **Deploy the Auth Server** — single Rust binary (axum + SQLite). See
+   [`devin.ai001/server`](https://github.com/lucyboy2026/devin.ai001/tree/main/server) and its `DEPLOY.md`
+   (systemd + Caddy auto-HTTPS).
+2. **Register** — in FlClash, open the node-auth screen, enter `server URL + email + password` → register. This creates a
+   `pending` account bound to this device's fingerprint.
+3. **Authorize** — the admin approves the account in the server's `/admin` panel (sets max devices + expiry).
+4. **Login** — log in; FlClash receives a ≤7-day token, pulls the subscription, and injects the token into every
+   hysteria2 node's `password`. The token is renewed automatically before expiry.
+
+Implementation details (device fingerprint, renewal scheduling, server API) are in [`NODE_AUTH.md`](NODE_AUTH.md).
 
 ## Use
 
@@ -68,6 +82,30 @@ Support the following actions
 ## Download
 
 <a href="https://chen08209.github.io/FlClash-fdroid-repo/repo?fingerprint=789D6D32668712EF7672F9E58DEEB15FBD6DCEEC5AE7A4371EA72F2AAE8A12FD"><img alt="Get it on F-Droid" src="snapshots/get-it-on-fdroid.svg" width="200px"/></a> <a href="https://github.com/chen08209/FlClash/releases"><img alt="Get it on GitHub" src="snapshots/get-it-on-github.svg" width="200px"/></a>
+
+## Releases (this fork)
+
+Releases are produced by **GitHub Actions** (`.github/workflows/build.yaml`) when a `v*` tag is pushed: it runs tests,
+builds Android / Windows / macOS / Linux (amd64 + arm64), and publishes a GitHub Release with the artifacts via
+`softprops/action-gh-release`.
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0   # triggers build.yaml -> builds all platforms -> creates the Release
+```
+
+Required repo **secrets** (Settings → Secrets and variables → Actions) before a tag build will succeed:
+
+| Secret | Used for |
+| --- | --- |
+| `KEYSTORE`, `KEY_ALIAS`, `STORE_PASSWORD`, `KEY_PASSWORD` | Android APK signing (base64 keystore) |
+| `SERVICE_JSON` | Android `google-services.json` (base64) |
+| `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `TELEGRAM_BOT_TOKEN` | optional release notification |
+| `SSH_DEPLOY_KEY` | optional deploy step |
+
+> Note: the build pulls the mihomo Go core as a git **submodule** (`core/Clash.Meta`); CI checks out with
+> `submodules: recursive`, so make sure the submodule is reachable. If you don't need Android yet, you can temporarily
+> drop the `android` entry from the build matrix to release the desktop platforms without signing secrets.
 
 ## Build
 
