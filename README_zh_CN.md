@@ -38,9 +38,19 @@ on Mobile:
 
 ## 节点设备绑定鉴权（本分支特性）
 
-本分支新增「设备绑定 + 服务端授权」的节点鉴权系统，与 Clash Verge Rev 客户端共用同一台 Auth Server：
+本分支新增「设备绑定 + 服务端授权」的节点鉴权系统，与 [Clash Verge Rev 客户端](https://github.com/lucyboy2026/devin.ai001)
+共用同一台 Auth Server（同一台服务器可同时给 FlClash 与 Clash Verge 两端发凭据）：
 注册 → 管理员授权 → 登录绑定设备并签发 ≤7 天 Token → Token 注入每个 hysteria2 节点的 `password` 并在临近过期时静默续期。
-详见 [`NODE_AUTH.md`](NODE_AUTH.md)。
+
+**端到端使用流程：**
+
+1. **部署 Auth Server** —— 单个 Rust 可执行文件（axum + SQLite），见
+   [`devin.ai001/server`](https://github.com/lucyboy2026/devin.ai001/tree/main/server) 及其 `DEPLOY.md`（systemd + Caddy 自动 HTTPS）。
+2. **注册** —— 在 FlClash 的节点鉴权界面填入「服务器地址 + 邮箱 + 密码」→ 注册，创建一个绑定本机设备指纹的 `pending` 账号。
+3. **授权** —— 管理员在服务端 `/admin` 后台通过该账号（设定设备数与有效期）。
+4. **登录** —— 登录后 FlClash 领取 ≤7 天 Token，拉取订阅并把 Token 注入每个 hysteria2 节点的 `password`，到期前自动续期。
+
+实现细节（设备指纹、续期调度、服务端接口）见 [`NODE_AUTH.md`](NODE_AUTH.md)。
 
 ## Use
 
@@ -68,6 +78,28 @@ on Mobile:
 ## Download
 
 <a href="https://chen08209.github.io/FlClash-fdroid-repo/repo?fingerprint=789D6D32668712EF7672F9E58DEEB15FBD6DCEEC5AE7A4371EA72F2AAE8A12FD"><img alt="Get it on F-Droid" src="snapshots/get-it-on-fdroid.svg" width="200px"/></a> <a href="https://github.com/chen08209/FlClash/releases"><img alt="Get it on GitHub" src="snapshots/get-it-on-github.svg" width="200px"/></a>
+
+## 发版（本分支）
+
+发版由 **GitHub Actions**（`.github/workflows/build.yaml`）在**推送 `v*` tag** 时触发：跑测试 → 构建
+Android / Windows / macOS / Linux（amd64 + arm64）→ 通过 `softprops/action-gh-release` 发布带产物的 GitHub Release。
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0   # 触发 build.yaml -> 全平台构建 -> 创建 Release
+```
+
+触发 tag 构建前需在仓库 **Secrets**（Settings → Secrets and variables → Actions）配置：
+
+| Secret | 用途 |
+| --- | --- |
+| `KEYSTORE`、`KEY_ALIAS`、`STORE_PASSWORD`、`KEY_PASSWORD` | Android APK 签名（base64 keystore）|
+| `SERVICE_JSON` | Android `google-services.json`（base64）|
+| `TELEGRAM_API_ID`、`TELEGRAM_API_HASH`、`TELEGRAM_BOT_TOKEN` | 可选，发版通知 |
+| `SSH_DEPLOY_KEY` | 可选，部署步骤 |
+
+> 注意：构建会以 git **submodule** 拉取 mihomo Go 内核（`core/Clash.Meta`），CI 用 `submodules: recursive` 检出，需保证子模块可访问。
+> 暂时不需要 Android 的话，可临时从构建矩阵里去掉 `android` 项，先发桌面端而不配签名密钥。
 
 ## Build
 
