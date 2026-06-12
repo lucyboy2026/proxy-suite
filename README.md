@@ -68,6 +68,15 @@ Supports Windows (x64/x86), Linux (x64/arm64) and macOS 11+ (intel/apple).
 - 系统代理和守卫、`TUN(虚拟网卡)` 模式。
 - 可视化节点和规则编辑
 - WebDav 配置备份和同步
+- **节点设备绑定两步鉴权**（本分支特性）：自建鉴权服务端 + 客户端设备指纹换取 7 天 Token，连接时自动注入 hysteria2 `password`，支持静默续期。
+
+### 节点设备绑定鉴权（本分支特性）
+
+本分支在上游基础上新增了一套「设备绑定 + 服务端授权」的节点鉴权系统：
+
+- **客户端（组件二）**：`src-tauri/src/feat/node_auth.rs`。用邮箱/密码 + 本机设备指纹换取 64-hex 设备 Token（≤7 天），写入 `node-auth.json`，并在 `enhance` 阶段注入到每个 hysteria2 节点的 `password`；临近过期时静默续期。
+- **服务端（组件一）**：[`server/`](./server/README.md)。Rust + axum + SQLite 单可执行文件，提供注册/登录/订阅/hysteria2 鉴权回调与 Web 管理后台，部署见 [`server/DEPLOY.md`](./server/DEPLOY.md)。
+- 多端客户端（FlClash）共用同一套协议，详见 [flclash-nodeauth](https://github.com/lucyboy2026/flclash-nodeauth)。
 
 ### FAQ
 
