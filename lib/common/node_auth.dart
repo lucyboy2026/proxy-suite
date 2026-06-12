@@ -182,9 +182,9 @@ class NodeAuth {
   /// applying config without risking a crash. Returns `true` when a fresh token
   /// was obtained.
   Future<bool> renewIfNeeded() async {
-    final session = await loadSession();
-    if (session == null || !session.needsRenewal(renewWindow)) return false;
     try {
+      final session = await loadSession();
+      if (session == null || !session.needsRenewal(renewWindow)) return false;
       final renewed = await renew();
       return renewed != null;
     } catch (_) {
