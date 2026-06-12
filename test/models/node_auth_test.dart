@@ -108,6 +108,65 @@ void main() {
     });
   });
 
+  group('needsRenewal', () {
+    NodeAuthSession sessionWith({String? token, String password = 'pw'}) {
+      return NodeAuthSession.fromLoginJson(
+        'https://a',
+        {'token': 't', 'expires_at': ?token},
+        password: password,
+      );
+    }
+
+    const window = Duration(days: 2);
+
+    test('is false without a stored password', () {
+      final soon = DateTime.now().add(const Duration(hours: 1));
+      expect(
+        sessionWith(token: soon.toIso8601String(), password: '')
+            .needsRenewal(window),
+        isFalse,
+      );
+    });
+
+    test('is false when expiry is unknown', () {
+      expect(sessionWith().needsRenewal(window), isFalse);
+    });
+
+    test('is true within the renewal window', () {
+      final soon = DateTime.now().add(const Duration(hours: 1));
+      expect(
+        sessionWith(token: soon.toIso8601String()).needsRenewal(window),
+        isTrue,
+      );
+    });
+
+    test('is false when comfortably before the window', () {
+      final later = DateTime.now().add(const Duration(days: 5));
+      expect(
+        sessionWith(token: later.toIso8601String()).needsRenewal(window),
+        isFalse,
+      );
+    });
+  });
+
+  group('password persistence', () {
+    test('password survives encode/decode but is sourced explicitly', () {
+      final session = NodeAuthSession.fromLoginJson(
+        'https://a',
+        {'token': 't'},
+        password: 'secret',
+      );
+      expect(session.password, 'secret');
+      final restored = NodeAuthSession.decode(session.encode());
+      expect(restored!.password, 'secret');
+    });
+
+    test('fromLoginJson defaults password to empty', () {
+      final session = NodeAuthSession.fromLoginJson('https://a', {'token': 't'});
+      expect(session.password, '');
+    });
+  });
+
   group('NodeAuthRegisterResult', () {
     test('defaults status to pending and message to empty', () {
       final result = NodeAuthRegisterResult.fromJson(<String, dynamic>{});

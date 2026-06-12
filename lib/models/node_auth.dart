@@ -15,6 +15,11 @@ class NodeAuthSession {
   final int activeDevices;
   final String subscriptionUrl;
 
+  /// Account password kept locally so the token can be renewed silently
+  /// (parity with the Clash Verge client, which stores it for `renew_if_needed`).
+  /// Never shown in the UI and never logged.
+  final String password;
+
   const NodeAuthSession({
     required this.serverUrl,
     required this.email,
@@ -24,12 +29,14 @@ class NodeAuthSession {
     required this.maxDevices,
     required this.activeDevices,
     required this.subscriptionUrl,
+    this.password = '',
   });
 
   factory NodeAuthSession.fromLoginJson(
     String serverUrl,
-    Map<String, dynamic> json,
-  ) {
+    Map<String, dynamic> json, {
+    String password = '',
+  }) {
     return NodeAuthSession(
       serverUrl: serverUrl,
       email: (json['username'] as String?) ?? '',
@@ -39,6 +46,7 @@ class NodeAuthSession {
       maxDevices: _parseInt(json['max_devices']),
       activeDevices: _parseInt(json['active_devices']),
       subscriptionUrl: (json['subscription_url'] as String?) ?? '',
+      password: password,
     );
   }
 
@@ -51,6 +59,7 @@ class NodeAuthSession {
     'maxDevices': maxDevices,
     'activeDevices': activeDevices,
     'subscriptionUrl': subscriptionUrl,
+    'password': password,
   };
 
   factory NodeAuthSession.fromJson(Map<String, dynamic> json) {
@@ -63,6 +72,7 @@ class NodeAuthSession {
       maxDevices: _parseInt(json['maxDevices']),
       activeDevices: _parseInt(json['activeDevices']),
       subscriptionUrl: (json['subscriptionUrl'] as String?) ?? '',
+      password: (json['password'] as String?) ?? '',
     );
   }
 
@@ -80,6 +90,15 @@ class NodeAuthSession {
     final exp = accountExpiresAt;
     if (exp == null) return false;
     return DateTime.now().isAfter(exp);
+  }
+
+  /// Whether the token is within [renewWindow] of expiry and should be renewed
+  /// silently. Requires a stored password to be actionable.
+  bool needsRenewal(Duration renewWindow) {
+    final exp = tokenExpiresAt;
+    if (exp == null) return false;
+    if (password.isEmpty) return false;
+    return DateTime.now().isAfter(exp.subtract(renewWindow));
   }
 
   String encode() => jsonEncode(toJson());

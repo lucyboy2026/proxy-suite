@@ -29,6 +29,10 @@ class NodeAuth {
   static const _sessionKey = 'node_auth_session';
   static const _installIdKey = 'node_auth_install_id';
 
+  /// Renew the device token once it is within this window of expiry, matching
+  /// the Clash Verge client's 2-day `RENEW_BEFORE` threshold.
+  static const renewWindow = Duration(days: 2);
+
   static NodeAuth? _instance;
 
   final Dio _dio = Dio(
@@ -154,9 +158,48 @@ class NodeAuth {
     if (data == null) {
       throw const NodeAuthException('登录响应解析失败 / invalid login response');
     }
-    final session = NodeAuthSession.fromLoginJson(url, data);
+    final session = NodeAuthSession.fromLoginJson(url, data, password: password);
     await saveSession(session);
     return session;
+  }
+
+  /// Re-authenticate with the stored credentials to obtain a fresh token.
+  /// Mirrors the Clash Verge client, which renews by logging in again with the
+  /// locally stored password. Returns the refreshed session, or `null` when no
+  /// renewable session exists (e.g. no stored password).
+  Future<NodeAuthSession?> renew() async {
+    final session = await loadSession();
+    if (session == null || session.password.isEmpty) return null;
+    return login(
+      serverUrl: session.serverUrl,
+      email: session.email,
+      password: session.password,
+    );
+  }
+
+  /// Renew the token only when it is close to expiry. Best-effort: any network
+  /// or server error is swallowed so callers can run this on a timer or before
+  /// applying config without risking a crash. Returns `true` when a fresh token
+  /// was obtained.
+  Future<bool> renewIfNeeded() async {
+    try {
+      final session = await loadSession();
+      if (session == null || !session.needsRenewal(renewWindow)) return false;
+      final renewed = await renew();
+      return renewed != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// The current, non-expired device token, or `null` when logged out or the
+  /// token has expired. Used to inject the token into hysteria2 nodes.
+  Future<String?> currentToken() async {
+    final session = await loadSession();
+    if (session == null || session.token.isEmpty || session.isTokenExpired) {
+      return null;
+    }
+    return session.token;
   }
 
   Future<Response<dynamic>> _post(String url, Map<String, dynamic> body) async {
