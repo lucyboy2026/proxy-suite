@@ -167,6 +167,34 @@ void main() {
     });
   });
 
+  group('loginEmail persistence', () {
+    test('is sourced from the typed email, not the server username', () {
+      final session = NodeAuthSession.fromLoginJson(
+        'https://a',
+        {'token': 't', 'username': 'display-name'},
+        loginEmail: 'typed@e.com',
+      );
+      // email mirrors the server's `username`, loginEmail mirrors user input.
+      expect(session.email, 'display-name');
+      expect(session.loginEmail, 'typed@e.com');
+    });
+
+    test('survives encode/decode', () {
+      final session = NodeAuthSession.fromLoginJson(
+        'https://a',
+        {'token': 't', 'username': 'u'},
+        loginEmail: 'typed@e.com',
+      );
+      final restored = NodeAuthSession.decode(session.encode());
+      expect(restored!.loginEmail, 'typed@e.com');
+    });
+
+    test('fromLoginJson defaults loginEmail to empty', () {
+      final session = NodeAuthSession.fromLoginJson('https://a', {'token': 't'});
+      expect(session.loginEmail, '');
+    });
+  });
+
   group('NodeAuthRegisterResult', () {
     test('defaults status to pending and message to empty', () {
       final result = NodeAuthRegisterResult.fromJson(<String, dynamic>{});

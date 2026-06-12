@@ -8,6 +8,11 @@ import 'dart:convert';
 class NodeAuthSession {
   final String serverUrl;
   final String email;
+
+  /// The email the user actually typed at login, kept locally to drive silent
+  /// renewal. [email] is derived from the server's `username` field, which is
+  /// not guaranteed to equal the login email, so renewal uses this instead.
+  final String loginEmail;
   final String token;
   final DateTime? tokenExpiresAt;
   final DateTime? accountExpiresAt;
@@ -23,6 +28,7 @@ class NodeAuthSession {
   const NodeAuthSession({
     required this.serverUrl,
     required this.email,
+    this.loginEmail = '',
     required this.token,
     required this.tokenExpiresAt,
     required this.accountExpiresAt,
@@ -36,10 +42,12 @@ class NodeAuthSession {
     String serverUrl,
     Map<String, dynamic> json, {
     String password = '',
+    String loginEmail = '',
   }) {
     return NodeAuthSession(
       serverUrl: serverUrl,
       email: (json['username'] as String?) ?? '',
+      loginEmail: loginEmail,
       token: (json['token'] as String?) ?? '',
       tokenExpiresAt: _parseDate(json['expires_at']),
       accountExpiresAt: _parseDate(json['account_expires_at']),
@@ -53,6 +61,7 @@ class NodeAuthSession {
   Map<String, dynamic> toJson() => {
     'serverUrl': serverUrl,
     'email': email,
+    'loginEmail': loginEmail,
     'token': token,
     'tokenExpiresAt': tokenExpiresAt?.toIso8601String(),
     'accountExpiresAt': accountExpiresAt?.toIso8601String(),
@@ -66,6 +75,7 @@ class NodeAuthSession {
     return NodeAuthSession(
       serverUrl: (json['serverUrl'] as String?) ?? '',
       email: (json['email'] as String?) ?? '',
+      loginEmail: (json['loginEmail'] as String?) ?? '',
       token: (json['token'] as String?) ?? '',
       tokenExpiresAt: _parseDate(json['tokenExpiresAt']),
       accountExpiresAt: _parseDate(json['accountExpiresAt']),
