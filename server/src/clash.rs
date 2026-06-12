@@ -53,3 +53,43 @@ pub async fn set_template(pool: &SqlitePool, template: &str) -> Result<()> {
 pub fn render(template: &str, token: &str) -> String {
     template.replace(TOKEN_PLACEHOLDER, token)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn render_replaces_every_placeholder() {
+        let template = "a: __NODE_TOKEN__\nb: __NODE_TOKEN__";
+        assert_eq!(render(template, "tok"), "a: tok\nb: tok");
+    }
+
+    #[test]
+    fn render_is_noop_without_placeholder() {
+        let template = "password: literal";
+        assert_eq!(render(template, "tok"), template);
+    }
+
+    #[test]
+    fn default_template_carries_the_placeholder() {
+        assert!(DEFAULT_TEMPLATE.contains(TOKEN_PLACEHOLDER));
+        let rendered = render(DEFAULT_TEMPLATE, "abc123");
+        assert!(!rendered.contains(TOKEN_PLACEHOLDER));
+        assert!(rendered.contains("password: abc123"));
+    }
+
+    async fn test_pool() -> SqlitePool {
+        let path = std::env::temp_dir().join(format!("nodeauth-test-{}.db", crate::auth::gen_token()));
+        db::init_pool(&format!("sqlite://{}", path.display())).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn get_template_defaults_then_persists_override() {
+        let pool = test_pool().await;
+        // With nothing stored, the default template is returned.
+        assert_eq!(get_template(&pool).await.unwrap(), DEFAULT_TEMPLATE);
+
+        set_template(&pool, "proxies: []  # custom").await.unwrap();
+        assert_eq!(get_template(&pool).await.unwrap(), "proxies: []  # custom");
+    }
+}
