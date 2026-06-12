@@ -49,10 +49,17 @@ class NodeAuth {
 
   String get platform => Platform.operatingSystem;
 
+  /// Normalize a user-entered server address: trim, drop trailing slashes and
+  /// default to `https://` when no scheme is given (parity with the Clash Verge
+  /// client's `normalize_server`).
   String _normalizeServerUrl(String serverUrl) {
     var url = serverUrl.trim();
     while (url.endsWith('/')) {
       url = url.substring(0, url.length - 1);
+    }
+    if (url.isEmpty) return url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://$url';
     }
     return url;
   }

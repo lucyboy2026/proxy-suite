@@ -32,11 +32,13 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
   bool _busy = false;
   bool _obscure = true;
   NodeAuthSession? _session;
+  String _deviceFp = '';
 
   @override
   void initState() {
     super.initState();
     _restore();
+    _loadDeviceFp();
   }
 
   Future<void> _restore() async {
@@ -49,6 +51,12 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
         _emailController.text = session.email;
       }
     });
+  }
+
+  Future<void> _loadDeviceFp() async {
+    final fp = await nodeAuth.deviceFingerprint();
+    if (!mounted) return;
+    setState(() => _deviceFp = fp);
   }
 
   @override
@@ -65,13 +73,6 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
     final password = _passwordController.text;
     if (server.isEmpty) {
       return _t(context, '请填写服务器地址', 'Server address is required');
-    }
-    if (!server.startsWith('http://') && !server.startsWith('https://')) {
-      return _t(
-        context,
-        '服务器地址需以 http:// 或 https:// 开头',
-        'Server address must start with http:// or https://',
-      );
     }
     if (!email.contains('@')) {
       return _t(context, '邮箱格式不正确', 'Invalid email format');
@@ -215,6 +216,7 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
           if (_session != null) ...[
             _StatusCard(
               session: _session!,
+              deviceFp: _deviceFp,
               onRefresh: _busy ? null : () => _importSubscription(_session!),
               onLogout: _busy ? null : _handleLogout,
             ),
@@ -252,6 +254,8 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
                   : (value) => setState(() => _isRegister = value.first),
             ),
             const SizedBox(height: 16),
+            _DeviceFpRow(deviceFp: _deviceFp),
+            const SizedBox(height: 12),
             TextField(
               controller: _serverController,
               enabled: !_busy,
@@ -336,11 +340,13 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
 
 class _StatusCard extends StatelessWidget {
   final NodeAuthSession session;
+  final String deviceFp;
   final VoidCallback? onRefresh;
   final VoidCallback? onLogout;
 
   const _StatusCard({
     required this.session,
+    required this.deviceFp,
     required this.onRefresh,
     required this.onLogout,
   });
@@ -382,18 +388,26 @@ class _StatusCard extends StatelessWidget {
               Icons.event_available,
               _t(context, '账号到期', 'Account expires'),
               _formatDate(context, session.accountExpiresAt),
+              expired: session.isAccountExpired,
             ),
             _row(
               context,
               Icons.vpn_key_outlined,
               _t(context, 'Token 到期', 'Token expires'),
               _formatDate(context, session.tokenExpiresAt),
+              expired: session.isTokenExpired,
             ),
             _row(
               context,
               Icons.devices,
               _t(context, '设备数', 'Devices'),
               '${session.activeDevices}/${session.maxDevices}',
+            ),
+            _row(
+              context,
+              Icons.fingerprint,
+              _t(context, '设备指纹', 'Device FP'),
+              deviceFp.isEmpty ? '-' : deviceFp,
             ),
             _row(
               context,
@@ -428,15 +442,21 @@ class _StatusCard extends StatelessWidget {
     BuildContext context,
     IconData icon,
     String label,
-    String value,
-  ) {
+    String value, {
+    bool expired = false,
+  }) {
     final theme = Theme.of(context);
+    final valueColor = expired ? theme.colorScheme.error : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: theme.colorScheme.outline),
+          Icon(
+            icon,
+            size: 18,
+            color: expired ? theme.colorScheme.error : theme.colorScheme.outline,
+          ),
           const SizedBox(width: 10),
           SizedBox(
             width: 96,
@@ -444,14 +464,53 @@ class _StatusCard extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              value,
+              expired
+                  ? '$value (${_t(context, '已过期', 'expired')})'
+                  : value,
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w500,
+                color: valueColor,
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Read-only display of the current device fingerprint, shown in the auth form
+/// so users can see the identity that will be bound on register/login
+/// (parity with the Clash Verge client's device-fp display).
+class _DeviceFpRow extends StatelessWidget {
+  final String deviceFp;
+
+  const _DeviceFpRow({required this.deviceFp});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.fingerprint, size: 18, color: theme.colorScheme.outline),
+        const SizedBox(width: 10),
+        Text(
+          _t(context, '设备指纹', 'Device FP'),
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            deviceFp.isEmpty ? '...' : deviceFp,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

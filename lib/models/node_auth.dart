@@ -66,6 +66,22 @@ class NodeAuthSession {
     );
   }
 
+  /// Whether the device token has passed its expiry. Mirrors the Clash Verge
+  /// client's `expired` flag. Returns `false` when the expiry is unknown so a
+  /// usable token is never treated as expired by mistake.
+  bool get isTokenExpired {
+    final exp = tokenExpiresAt;
+    if (exp == null) return false;
+    return DateTime.now().isAfter(exp);
+  }
+
+  /// Whether the account itself has reached its validity deadline.
+  bool get isAccountExpired {
+    final exp = accountExpiresAt;
+    if (exp == null) return false;
+    return DateTime.now().isAfter(exp);
+  }
+
   String encode() => jsonEncode(toJson());
 
   static NodeAuthSession? decode(String? raw) {
