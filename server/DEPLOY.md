@@ -142,6 +142,12 @@ auth:
 
 原理：客户端登录后拿到设备 Token，写入节点 `password`；hysteria2 收到连接时回调 `/auth`，本服务校验「Token→设备→账号」有效后返回 `{"ok":true,"id":"<邮箱>#<设备>"}`，否则拒绝。
 
+> **新增一台 VPS 节点**：在新机上跑 `scripts/add-hysteria2-node.sh`（自动装 hysteria2 + 配好指向本服务的 `/auth` 回调 + 自检连通性，并打印可粘贴的订阅模板节点片段）：
+> ```bash
+> AUTH_URL=https://你的域名/auth ./scripts/add-hysteria2-node.sh
+> ```
+> **挂多个不同 IP 的节点**：见 [`docs/multi-node.md`](docs/multi-node.md)。
+
 ## 7. Telegram Webhook（审批按钮）
 
 部署完且有公网 HTTPS 后，注册一次 webhook：
