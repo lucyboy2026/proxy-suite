@@ -74,6 +74,17 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Override version from tag
+        shell: bash
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          name="${ver%%-*}"
+          code="$(date -u +%Y%m%d)$(printf '%02d' $(( GITHUB_RUN_NUMBER % 100 )))"
+          echo "Setting pubspec version to ${name}+${code}"
+          tmp="$(mktemp)"
+          sed -E "s/^version:.*/version: ${name}+${code}/" pubspec.yaml > "$tmp" && mv "$tmp" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
       - name: Setup Android Signing
         if: startsWith(matrix.platform,'android')
         run: |
