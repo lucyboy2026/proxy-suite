@@ -117,6 +117,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         with:
           run_install: false
+          package_json_file: clash-verge/package.json
 
       - name: Install Node
         if: steps.gate.outputs.run == 'true'
