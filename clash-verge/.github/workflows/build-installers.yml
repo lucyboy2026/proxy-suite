@@ -1,0 +1,157 @@
+name: Build Installers
+
+# 为 fork 仓库构建 Windows / macOS 安装包（未签名），产物上传为 Actions Artifacts。
+# - 手动触发：Actions 页面 "Run workflow"，可勾选目标平台。
+# - 打 tag（v*）触发：自动构建全部平台。
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_windows_x64:
+        description: '构建 Windows x64 (nsis .exe)'
+        required: false
+        type: boolean
+        default: true
+      run_windows_arm64:
+        description: '构建 Windows ARM64 (nsis .exe)'
+        required: false
+        type: boolean
+        default: false
+      run_macos_aarch64:
+        description: '构建 macOS Apple Silicon (dmg)'
+        required: false
+        type: boolean
+        default: true
+      run_macos_x64:
+        description: '构建 macOS Intel (dmg)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+  HUSKY: 0
+
+concurrency:
+  group: '${{ github.workflow }} - ${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            id: windows-x64
+            input: run_windows_x64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            bundle: nsis
+            id: windows-arm64
+            input: run_windows_arm64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundle: dmg
+            id: macos-aarch64
+            input: run_macos_aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+            id: macos-x64
+            input: run_macos_x64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      # tag 触发时 inputs 为空，默认构建该矩阵项；workflow_dispatch 时按勾选过滤。
+      - name: Resolve whether to run this target
+        id: gate
+        shell: bash
+        run: |
+          EV="${{ github.event_name }}"
+          ID="${{ matrix.id }}"
+          if [ "$EV" = "workflow_dispatch" ]; then
+            echo "run=${{ github.event.inputs[matrix.input] }}" >> "$GITHUB_OUTPUT"
+          elif [ "$EV" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # 打 tag 触发：构建全部平台
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Repository
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v6
+
+      - name: Install Rust Stable
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Add Rust Target
+        if: steps.gate.outputs.run == 'true'
+        run: rustup target add ${{ matrix.target }} --toolchain 1.95.0 || rustup target add ${{ matrix.target }}
+
+      - name: Rust Cache
+        if: steps.gate.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: 'v1-rust'
+          key: 'installer-${{ matrix.os }}-${{ matrix.target }}'
+          workspaces: |
+            . -> target
+          cache-all-crates: true
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        if: steps.gate.outputs.run == 'true'
+        with:
+          run_install: false
+
+      - name: Install Node
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.16.0'
+          cache: 'pnpm'
+
+      - name: Install frontend deps and prebuild
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          pnpm i
+          pnpm run prebuild ${{ matrix.target }}
+
+      - name: Tauri build (unsigned)
+        if: steps.gate.outputs.run == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          NODE_OPTIONS: '--max_old_space_size=4096'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: pnpm
+          # 关闭 updater 产物生成，避免未提供 TAURI_SIGNING_PRIVATE_KEY 时签名报错（仅出安装包）。
+          args: '--target ${{ matrix.target }} -b ${{ matrix.bundle }} --config {"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload installer (Windows)
+        if: steps.gate.outputs.run == 'true' && matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: clash-verge-${{ matrix.id }}
+          path: target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload installer (macOS)
+        if: steps.gate.outputs.run == 'true' && matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: clash-verge-${{ matrix.id }}
+          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
