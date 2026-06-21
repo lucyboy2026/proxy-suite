@@ -38,6 +38,15 @@ pub struct NodeAuthState {
     pub active_devices: Option<u32>,
 }
 
+/// 回传前端的注册结果（仅含服务端状态与提示文案）。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NodeAuthRegisterResult {
+    /// 服务端账号状态，通常为 `pending`（待管理员授权）。
+    pub status: String,
+    /// 服务端返回的提示文案。
+    pub message: String,
+}
+
 /// 回传前端的状态（不含密码与完整 Token）。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NodeAuthStatus {
@@ -60,6 +69,24 @@ struct LoginRequest<'a> {
     password: &'a str,
     device_fp: &'a str,
     platform: &'a str,
+}
+
+/// Auth Server `POST /register` 的请求体。
+#[derive(Debug, Serialize)]
+struct RegisterRequest<'a> {
+    email: &'a str,
+    password: &'a str,
+    device_fp: &'a str,
+    platform: &'a str,
+}
+
+/// Auth Server `POST /register` 的响应体。
+#[derive(Debug, Deserialize)]
+struct RegisterResponse {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    message: String,
 }
 
 /// Auth Server `POST /login` 的响应体。
@@ -258,6 +285,52 @@ pub async fn login(server: &str, username: &str, password: &str) -> Result<NodeA
     save_state(&state)?;
     logging!(info, Type::Config, "节点账号登录成功: {}", state.username);
     Ok(to_status(&state))
+}
+
+/// 调用 Auth Server `/register` 创建新账号（创建后为 `pending`，需管理员授权）。
+pub async fn register(server: &str, username: &str, password: &str) -> Result<NodeAuthRegisterResult> {
+    let server = normalize_server(server);
+    let device_fp = device_fingerprint();
+    let platform = platform_name();
+
+    let url = format!("{server}/register");
+    let body = RegisterRequest {
+        email: username.trim(),
+        password,
+        device_fp: &device_fp,
+        platform,
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .context("构建 HTTP 客户端失败")?;
+
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .with_context(|| format!("请求 {url} 失败"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let msg = resp.text().await.unwrap_or_default();
+        anyhow::bail!("注册失败（HTTP {}）：{}", status.as_u16(), msg.trim());
+    }
+
+    let parsed: RegisterResponse = resp.json().await.context("解析注册响应失败")?;
+    logging!(
+        info,
+        Type::Config,
+        "节点账号注册成功: {} (status={})",
+        username.trim(),
+        parsed.status
+    );
+    Ok(NodeAuthRegisterResult {
+        status: parsed.status,
+        message: parsed.message,
+    })
 }
 
 /// 返回当前登录状态（供前端展示）。
