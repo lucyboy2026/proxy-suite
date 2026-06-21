@@ -1,0 +1,44 @@
+name: server-ci
+
+# 鉴权服务端 (clash-verge/server) 的 fmt / clippy / test。
+# 仅在改动服务端代码时触发。
+
+on:
+  push:
+    paths:
+      - 'clash-verge/server/**'
+      - '.github/workflows/server-ci.yml'
+  pull_request:
+    paths:
+      - 'clash-verge/server/**'
+      - '.github/workflows/server-ci.yml'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: clash-verge/server
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: clash-verge/server -> target
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets
+
+      - name: Test
+        run: cargo test --release

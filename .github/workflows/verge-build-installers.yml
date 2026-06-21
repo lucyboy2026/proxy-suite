@@ -1,0 +1,160 @@
+name: verge-build-installers
+
+# 为 Clash Verge Rev 桌面端 (clash-verge/) 构建未签名安装包，产物上传为 Actions Artifacts。
+# - 手动触发：Actions 页 "Run workflow"，可勾选目标平台。
+# - 推 tag (verge-v*) 触发：构建全部平台。
+# 改编自 clash-verge/.github/workflows/build-installers.yml（路径下沉到 clash-verge/ 子目录）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_windows_x64:
+        description: '构建 Windows x64 (nsis .exe)'
+        required: false
+        type: boolean
+        default: true
+      run_windows_arm64:
+        description: '构建 Windows ARM64 (nsis .exe)'
+        required: false
+        type: boolean
+        default: false
+      run_macos_aarch64:
+        description: '构建 macOS Apple Silicon (dmg)'
+        required: false
+        type: boolean
+        default: true
+      run_macos_x64:
+        description: '构建 macOS Intel (dmg)'
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'verge-v*'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: short
+  HUSKY: 0
+
+concurrency:
+  group: '${{ github.workflow }} - ${{ github.head_ref || github.ref }}'
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundle: nsis
+            id: windows-x64
+            input: run_windows_x64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            bundle: nsis
+            id: windows-arm64
+            input: run_windows_arm64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundle: dmg
+            id: macos-aarch64
+            input: run_macos_aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundle: dmg
+            id: macos-x64
+            input: run_macos_x64
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: clash-verge
+    steps:
+      - name: Resolve whether to run this target
+        id: gate
+        shell: bash
+        working-directory: .
+        run: |
+          EV="${{ github.event_name }}"
+          if [ "$EV" = "workflow_dispatch" ]; then
+            echo "run=${{ github.event.inputs[matrix.input] }}" >> "$GITHUB_OUTPUT"
+          elif [ "$EV" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Repository
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v6
+
+      - name: Install Rust Stable
+        if: steps.gate.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Add Rust Target
+        if: steps.gate.outputs.run == 'true'
+        run: rustup target add ${{ matrix.target }} --toolchain 1.95.0 || rustup target add ${{ matrix.target }}
+
+      - name: Rust Cache
+        if: steps.gate.outputs.run == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: 'v1-rust'
+          key: 'installer-${{ matrix.os }}-${{ matrix.target }}'
+          workspaces: |
+            clash-verge -> target
+          cache-all-crates: true
+
+      - uses: pnpm/action-setup@v6
+        name: Install pnpm
+        if: steps.gate.outputs.run == 'true'
+        with:
+          run_install: false
+
+      - name: Install Node
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.16.0'
+          cache: 'pnpm'
+          cache-dependency-path: clash-verge/pnpm-lock.yaml
+
+      - name: Install frontend deps and prebuild
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          pnpm i
+          pnpm run prebuild ${{ matrix.target }}
+
+      - name: Tauri build (unsigned)
+        if: steps.gate.outputs.run == 'true'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          NODE_OPTIONS: '--max_old_space_size=4096'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: clash-verge
+          tauriScript: pnpm
+          args: '--target ${{ matrix.target }} -b ${{ matrix.bundle }} --config {"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload installer (Windows)
+        if: steps.gate.outputs.run == 'true' && matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: clash-verge-${{ matrix.id }}
+          path: clash-verge/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Upload installer (macOS)
+        if: steps.gate.outputs.run == 'true' && matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: clash-verge-${{ matrix.id }}
+          path: clash-verge/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
