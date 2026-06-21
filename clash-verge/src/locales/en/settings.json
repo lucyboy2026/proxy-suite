@@ -165,14 +165,21 @@
         "username": "Username",
         "password": "Password"
       },
+      "modes": {
+        "login": "Sign in",
+        "register": "Register"
+      },
       "actions": {
         "login": "Sign in",
+        "register": "Register",
         "logout": "Sign out",
         "relogin": "Sign in again"
       },
       "messages": {
         "loginSuccess": "Signed in",
         "loginFailed": "Sign-in failed",
+        "registerSuccess": "Registered. The administrator has been notified to review your account.",
+        "registerFailed": "Registration failed",
         "logoutSuccess": "Signed out",
         "serverRequired": "Server address is required",
         "usernameRequired": "Username is required",

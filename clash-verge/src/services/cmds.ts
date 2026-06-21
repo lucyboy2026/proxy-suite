@@ -595,6 +595,18 @@ export async function nodeAuthGetDeviceFp() {
   return invoke<string>('node_auth_get_device_fp')
 }
 
+export async function nodeAuthRegister(
+  server: string,
+  username: string,
+  password: string,
+) {
+  return invoke<INodeAuthRegisterResult>('node_auth_register', {
+    server,
+    username,
+    password,
+  })
+}
+
 export async function nodeAuthLogin(
   server: string,
   username: string,

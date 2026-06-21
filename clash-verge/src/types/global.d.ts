@@ -266,6 +266,11 @@ interface IClashInfo {
   secret?: string
 }
 
+interface INodeAuthRegisterResult {
+  status: string
+  message: string
+}
+
 interface INodeAuthStatus {
   logged_in: boolean
   server: string

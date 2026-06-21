@@ -5,6 +5,8 @@ import {
   ListItem,
   ListItemText,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material'
 import { useLockFn } from 'ahooks'
@@ -17,6 +19,7 @@ import {
   nodeAuthGetStatus,
   nodeAuthLogin,
   nodeAuthLogout,
+  nodeAuthRegister,
 } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
 
@@ -29,6 +32,7 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [isWorking, setIsWorking] = useState(false)
+  const [mode, setMode] = useState<'login' | 'register'>('login')
 
   const [status, setStatus] = useState<INodeAuthStatus | null>(null)
   const [deviceFp, setDeviceFp] = useState('')
@@ -52,6 +56,7 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
     open: () => {
       setOpen(true)
       setPassword('')
+      setMode('login')
       refresh().catch((err) => console.error('[NodeAuthViewer] refresh', err))
     },
     close: () => setOpen(false),
@@ -81,6 +86,36 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
     } catch (err) {
       showNotice.error(
         'settings.sections.nodeAuth.messages.loginFailed',
+        err,
+        4000,
+      )
+    } finally {
+      setIsWorking(false)
+    }
+  })
+
+  const onRegister = useLockFn(async () => {
+    if (!server.trim()) {
+      showNotice.error('settings.sections.nodeAuth.messages.serverRequired')
+      return
+    }
+    if (!username.trim()) {
+      showNotice.error('settings.sections.nodeAuth.messages.usernameRequired')
+      return
+    }
+    if (!password) {
+      showNotice.error('settings.sections.nodeAuth.messages.passwordRequired')
+      return
+    }
+    try {
+      setIsWorking(true)
+      await nodeAuthRegister(server.trim(), username.trim(), password)
+      setPassword('')
+      showNotice.success('settings.sections.nodeAuth.messages.registerSuccess')
+      setMode('login')
+    } catch (err) {
+      showNotice.error(
+        'settings.sections.nodeAuth.messages.registerFailed',
         err,
         4000,
       )
@@ -120,6 +155,8 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
             <CircularProgress size={16} color="inherit" />
             {t('shared.statuses.saving')}
           </Box>
+        ) : mode === 'register' ? (
+          t('settings.sections.nodeAuth.actions.register')
         ) : loggedIn ? (
           t('settings.sections.nodeAuth.actions.relogin')
         ) : (
@@ -130,11 +167,33 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
       disableOk={isWorking}
       onClose={() => setOpen(false)}
       onCancel={() => setOpen(false)}
-      onOk={onLogin}
+      onOk={mode === 'register' ? onRegister : onLogin}
     >
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
         {t('settings.sections.nodeAuth.description')}
       </Typography>
+
+      {!loggedIn && (
+        <ToggleButtonGroup
+          fullWidth
+          exclusive
+          size="small"
+          color="primary"
+          value={mode}
+          onChange={(_, value) => {
+            if (value) setMode(value as 'login' | 'register')
+          }}
+          disabled={isWorking}
+          sx={{ mb: 1.5 }}
+        >
+          <ToggleButton value="login">
+            {t('settings.sections.nodeAuth.modes.login')}
+          </ToggleButton>
+          <ToggleButton value="register">
+            {t('settings.sections.nodeAuth.modes.register')}
+          </ToggleButton>
+        </ToggleButtonGroup>
+      )}
 
       <List sx={{ py: 0 }}>
         <ListItem sx={{ px: 0, py: 0.5 }}>

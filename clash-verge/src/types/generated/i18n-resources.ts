@@ -1177,6 +1177,7 @@ export interface TranslationResources {
           actions: {
             login: string
             logout: string
+            register: string
             relogin: string
           }
           description: string
@@ -1194,8 +1195,14 @@ export interface TranslationResources {
             loginSuccess: string
             logoutSuccess: string
             passwordRequired: string
+            registerFailed: string
+            registerSuccess: string
             serverRequired: string
             usernameRequired: string
+          }
+          modes: {
+            login: string
+            register: string
           }
           notLoggedIn: string
           placeholders: {
