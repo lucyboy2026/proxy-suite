@@ -9,8 +9,6 @@ on:
   push:
     tags:
       - 'flclash-v*'
-env:
-  IS_STABLE: ${{ !contains(github.ref, '-') }}
 
 jobs:
   test:
@@ -48,6 +46,7 @@ jobs:
       run:
         working-directory: flclash
     strategy:
+      fail-fast: false
       matrix:
         include:
           - platform: android
@@ -96,6 +95,13 @@ jobs:
           tmp="$(mktemp)"
           sed -E "s/^version:.*/version: ${name}+${code}/" pubspec.yaml > "$tmp" && mv "$tmp" pubspec.yaml
           grep '^version:' pubspec.yaml
+
+      - name: Compute release channel
+        shell: bash
+        working-directory: .
+        run: |
+          ver="${GITHUB_REF_NAME#flclash-v}"
+          if [[ "$ver" == *-* ]]; then echo "IS_STABLE=false" >> "$GITHUB_ENV"; else echo "IS_STABLE=true" >> "$GITHUB_ENV"; fi
 
       - name: Setup Android Signing
         if: startsWith(matrix.platform,'android')
@@ -167,6 +173,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Compute release channel
+        shell: bash
+        working-directory: .
+        run: |
+          ver="${GITHUB_REF_NAME#flclash-v}"
+          if [[ "$ver" == *-* ]]; then echo "IS_STABLE=false" >> "$GITHUB_ENV"; else echo "IS_STABLE=true" >> "$GITHUB_ENV"; fi
 
       - name: Download
         uses: actions/download-artifact@v4
