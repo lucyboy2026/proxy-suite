@@ -2,6 +2,7 @@
 
 use crate::auth::SessionStore;
 use crate::config::Config;
+use crate::online::OnlineTracker;
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
@@ -10,4 +11,5 @@ pub struct AppState {
     pub pool: SqlitePool,
     pub cfg: Arc<Config>,
     pub sessions: Arc<SessionStore>,
+    pub online: Arc<OnlineTracker>,
 }
