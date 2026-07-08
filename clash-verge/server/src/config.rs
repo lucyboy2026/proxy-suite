@@ -23,6 +23,13 @@ pub struct Config {
     /// 设备 Token 有效期（天），不超过用户到期时间
     pub token_ttl_days: i64,
 
+    /// `/sub/:key` 是否要求携带已绑定设备的指纹（防订阅链接外传）
+    pub sub_require_fp: bool,
+    /// 每个 Token 允许的同时在线来源 IP 数（0 = 不限制）
+    pub max_online_ips: u32,
+    /// 在线 IP 记录的空闲过期时间（秒）
+    pub online_ip_ttl_secs: u64,
+
     /// 邮件配置（可选）
     pub smtp: Option<SmtpConfig>,
     /// Telegram 配置（可选）
@@ -93,6 +100,9 @@ impl Config {
             default_max_devices: var_or("DEFAULT_MAX_DEVICES", "1").parse().unwrap_or(1),
             default_valid_days: var_or("DEFAULT_VALID_DAYS", "30").parse().unwrap_or(30),
             token_ttl_days: var_or("TOKEN_TTL_DAYS", "7").parse().unwrap_or(7),
+            sub_require_fp: var_or("SUB_REQUIRE_FP", "true").parse().unwrap_or(true),
+            max_online_ips: var_or("MAX_ONLINE_IPS", "3").parse().unwrap_or(3),
+            online_ip_ttl_secs: var_or("ONLINE_IP_TTL_SECS", "600").parse().unwrap_or(600),
             smtp,
             telegram,
         }

@@ -8,6 +8,7 @@ mod email;
 mod error;
 mod models;
 mod notify;
+mod online;
 mod routes;
 mod state;
 mod telegram;
@@ -47,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         cfg: Arc::new(cfg.clone()),
         sessions: Arc::new(SessionStore::new()),
+        online: Arc::new(online::OnlineTracker::new()),
     };
 
     let app = build_router(state);
@@ -109,6 +111,9 @@ mod integration_tests {
             default_max_devices: 1,
             default_valid_days: 30,
             token_ttl_days: 7,
+            sub_require_fp: true,
+            max_online_ips: 2,
+            online_ip_ttl_secs: 600,
             smtp: None,
             telegram: None,
         }
@@ -122,6 +127,7 @@ mod integration_tests {
             pool,
             cfg: Arc::new(test_config()),
             sessions: Arc::new(SessionStore::new()),
+            online: Arc::new(online::OnlineTracker::new()),
         };
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -206,6 +212,8 @@ mod integration_tests {
         assert_eq!(token.len(), 64);
         assert_eq!(login["username"], "alice@example.com");
         let sub_url = login["subscription_url"].as_str().unwrap().to_string();
+        // 订阅链接已携带本设备指纹
+        assert!(sub_url.ends_with("?fp=fp-1"), "sub_url 应带 fp 参数: {sub_url}");
 
         // 5) /config?token= -> 配置里 hysteria2 password 注入了该 token
         let yaml = c
@@ -218,7 +226,7 @@ mod integration_tests {
             .unwrap();
         assert!(yaml.contains(&format!("password: {token}")));
 
-        // 6) 固定订阅 /sub/{key} -> 注入最近活跃 token
+        // 6) 固定订阅 /sub/{key}?fp= -> 注入该设备 token
         let sub_path = sub_url.strip_prefix("http://test.local").unwrap();
         let yaml = c
             .get(format!("{base}{sub_path}"))
@@ -230,6 +238,13 @@ mod integration_tests {
             .unwrap();
         assert!(yaml.contains(&format!("password: {token}")));
 
+        // 6b) 不带 fp -> 401；未绑定的 fp -> 403（链接外传无效）
+        let bare = sub_path.split('?').next().unwrap();
+        let resp = c.get(format!("{base}{bare}")).send().await.unwrap();
+        assert_eq!(resp.status(), 401);
+        let resp = c.get(format!("{base}{bare}?fp=stranger")).send().await.unwrap();
+        assert_eq!(resp.status(), 403);
+
         // 7) hysteria2 鉴权回调 -> ok:true
         let resp = c
             .post(format!("{base}/auth"))
@@ -240,6 +255,30 @@ mod integration_tests {
         let body: Value = resp.json().await.unwrap();
         assert_eq!(body["ok"], true);
         assert_eq!(body["id"], "alice@example.com#fp-1");
+
+        // 8) 同时在线 IP 限制（test_config 限 2 个）：前 2 个 IP 放行，第 3 个拒绝，已在线 IP 重连不受影响
+        let auth = |addr: &str| {
+            let c = c.clone();
+            let base = base.clone();
+            let token = token.clone();
+            let addr = addr.to_string();
+            async move {
+                let body: Value = c
+                    .post(format!("{base}/auth"))
+                    .json(&serde_json::json!({ "auth": token, "addr": addr }))
+                    .send()
+                    .await
+                    .unwrap()
+                    .json()
+                    .await
+                    .unwrap();
+                body["ok"] == true
+            }
+        };
+        assert!(auth("10.0.0.1:1000").await);
+        assert!(auth("10.0.0.2:1000").await);
+        assert!(!auth("10.0.0.3:1000").await, "第 3 个不同 IP 应被拒绝");
+        assert!(auth("10.0.0.1:2000").await, "已在线 IP 换端口重连应放行");
     }
 
     #[tokio::test]

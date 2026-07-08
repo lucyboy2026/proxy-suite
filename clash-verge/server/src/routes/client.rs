@@ -16,7 +16,9 @@ use crate::models::{
     find_user_by_id, find_user_by_subscription_key, latest_active_token, parse_dt,
 };
 use crate::notify;
+use crate::online::client_ip;
 use crate::state::AppState;
+use std::time::Duration as StdDuration;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRequest {
@@ -236,7 +238,13 @@ pub async fn login(State(state): State<AppState>, Json(req): Json<LoginRequest>)
 
     let active_devices = count_user_devices(pool, user.id).await? as u32;
     let sub_key = ensure_subscription_key(pool, user.id).await?;
-    let subscription_url = format!("{}/sub/{}", state.cfg.public_base_url.trim_end_matches('/'), sub_key);
+    // 订阅链接携带本设备指纹，供 `/sub/:key` 校验设备绑定
+    let subscription_url = format!(
+        "{}/sub/{}?fp={}",
+        state.cfg.public_base_url.trim_end_matches('/'),
+        sub_key,
+        urlencode(&req.device_fp)
+    );
 
     Ok(Json(LoginResponse {
         token,
@@ -247,6 +255,18 @@ pub async fn login(State(state): State<AppState>, Json(req): Json<LoginRequest>)
         account_expires_at: user.expires_at.clone(),
         subscription_url,
     }))
+}
+
+/// 最小 percent-encode：保留字母数字与 `-_.~`，其余字节转 `%XX`。
+fn urlencode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 #[derive(Debug, Deserialize)]
@@ -305,7 +325,17 @@ pub async fn get_config(
 /// 与 `/config?token=` 不同，这里用「不随 7 天 Token 轮换而失效」的 `subscription_key`
 /// 寻址，服务端自动注入该用户当前最近活跃设备的 Token。客户端导入一次即可长期自动更新；
 /// 实际连接时客户端 `enhance` 还会用本机最新 Token 覆盖 password，故订阅内的 Token 仅作占位。
-pub async fn get_subscription(State(state): State<AppState>, Path(key): Path<String>) -> AppResult<impl IntoResponse> {
+#[derive(Debug, Deserialize)]
+pub struct SubQuery {
+    /// 请求方设备指纹；开启 `sub_require_fp` 时必须是该账号已绑定的设备。
+    pub fp: Option<String>,
+}
+
+pub async fn get_subscription(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    Query(q): Query<SubQuery>,
+) -> AppResult<impl IntoResponse> {
     let pool = &state.pool;
     let user = find_user_by_subscription_key(pool, key.trim())
         .await?
@@ -317,8 +347,34 @@ pub async fn get_subscription(State(state): State<AppState>, Path(key): Path<Str
         return Err(AppError::forbidden("账号已过期，请联系管理员续期"));
     }
 
-    // 注入该用户最近活跃设备的 Token；尚无可用 Token 时留空，连接时由客户端 enhance 注入。
-    let token = latest_active_token(pool, user.id).await?.unwrap_or_default();
+    // 设备绑定校验：订阅只能在该账号已登录过的设备上拉取，链接外传无效。
+    let fp = q.fp.as_deref().map(str::trim).unwrap_or_default();
+    let bound_device = if fp.is_empty() {
+        if state.cfg.sub_require_fp {
+            return Err(AppError::unauthorized("订阅链接缺少设备标识，请在客户端登录后自动导入"));
+        }
+        None
+    } else {
+        let device = find_device(pool, user.id, fp)
+            .await?
+            .filter(|d| d.revoked == 0)
+            .ok_or_else(|| AppError::forbidden("该设备未绑定此账号，请先在客户端登录"))?;
+        Some(device)
+    };
+
+    // 优先注入请求设备自己的有效 Token，否则退回最近活跃设备的 Token；
+    // 尚无可用 Token 时留空，连接时由客户端 enhance 注入。
+    let device_token = bound_device.and_then(|d| {
+        let valid = match d.token_expires_at.as_deref().and_then(parse_dt) {
+            Some(exp) => Utc::now() < exp,
+            None => true,
+        };
+        d.token.filter(|t| !t.is_empty() && valid)
+    });
+    let token = match device_token {
+        Some(t) => t,
+        None => latest_active_token(pool, user.id).await?.unwrap_or_default(),
+    };
     let template = clash::get_template(pool).await?;
     let yaml = clash::render(&template, &token);
 
@@ -372,6 +428,17 @@ pub async fn hysteria_auth(State(state): State<AppState>, Json(req): Json<Hyster
     };
     if !user.is_active() || user.is_expired() {
         return ok_resp(false, "", "账号不可用");
+    }
+    // 同时在线 IP 限制：防止同一 Token 被转发后多地同时使用。
+    // 限的是「同时在线的不同来源 IP 数」，动态 IP 切换不受影响。
+    let limit = state.cfg.max_online_ips as usize;
+    let ip = client_ip(&req.addr);
+    if limit > 0 && !ip.is_empty() {
+        let ttl = StdDuration::from_secs(state.cfg.online_ip_ttl_secs);
+        if !state.online.admit(&token, ip, limit, ttl) {
+            tracing::warn!("token 同时在线 IP 超限: user={} ip={}", user.email, ip);
+            return ok_resp(false, "", "同时在线设备过多，请稍后再试或联系管理员");
+        }
     }
     // 标识用「邮箱#设备指纹」，便于服务端按用户限速/统计。
     let id = format!("{}#{}", user.email, device.device_fp);

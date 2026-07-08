@@ -14,8 +14,8 @@ Clash Verge 客户端「节点设备绑定两步鉴权」的服务端，配合�
 | POST | `/register` | 注册（邮箱+密码+设备指纹）→ 建 pending 用户 → 通知管理员 |
 | POST | `/login` | 校验账号、绑定设备、签发 64-hex 设备 Token（≤7 天） |
 | GET | `/config?token=` | 下发该用户的 Clash YAML（hysteria2 `password` 注入 Token） |
-| GET | `/sub/:key` | 长期固定订阅链接，自动注入该用户最近活跃设备的 Token |
-| POST | `/auth` | hysteria2 HTTP 鉴权回调，返回 `{ok,id}` |
+| GET | `/sub/:key?fp=` | 长期固定订阅链接；需携带已绑定设备的指纹（`SUB_REQUIRE_FP` 可关），注入该设备（或最近活跃设备）的 Token |
+| POST | `/auth` | hysteria2 HTTP 鉴权回调，返回 `{ok,id}`；每 Token 同时在线 IP 数限 `MAX_ONLINE_IPS`（默认 3，0=不限） |
 | POST | `/tg/webhook` | Telegram 审批按钮回调 |
 | GET | `/healthz` | 健康检查 |
 
