@@ -101,7 +101,10 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool> {
         .await
         .is_ok()
     {
-        sqlx::query("UPDATE users SET email_verified = 1").execute(&pool).await.ok();
+        sqlx::query("UPDATE users SET email_verified = 1")
+            .execute(&pool)
+            .await
+            .ok();
     }
     // 列就绪后再建唯一索引（放在迁移之后，兼容旧库升级）。
     sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_subkey ON users(subscription_key)")

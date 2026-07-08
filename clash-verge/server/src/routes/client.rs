@@ -249,7 +249,9 @@ pub async fn login(State(state): State<AppState>, Json(req): Json<LoginRequest>)
         return Err(AppError::unauthorized("用户名或密码错误"));
     }
     if !user.is_email_verified() {
-        return Err(AppError::forbidden("邮箱尚未验证，请先点击验证邮件中的链接（可重新注册以重发邮件）"));
+        return Err(AppError::forbidden(
+            "邮箱尚未验证，请先点击验证邮件中的链接（可重新注册以重发邮件）",
+        ));
     }
     match user.status.as_str() {
         "active" => {}
