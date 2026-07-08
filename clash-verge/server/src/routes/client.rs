@@ -12,8 +12,9 @@ use crate::auth::{gen_token, hash_password, verify_password};
 use crate::clash;
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    count_user_devices, ensure_subscription_key, find_device, find_device_by_token, find_user_by_email,
-    find_user_by_id, find_user_by_subscription_key, latest_active_token, parse_dt,
+    consume_verification_token, count_user_devices, ensure_subscription_key, find_device, find_device_by_token,
+    find_user_by_email, find_user_by_id, find_user_by_subscription_key, latest_active_token, list_user_devices,
+    parse_dt, upsert_verification_token,
 };
 use crate::notify;
 use crate::online::client_ip;
@@ -64,8 +65,20 @@ pub async fn register(State(state): State<AppState>, Json(req): Json<RegisterReq
     let pool = &state.pool;
 
     if let Some(user) = find_user_by_email(pool, &email).await? {
-        // 已存在：根据状态返回提示，并把新设备指纹登记 + 通知管理员。
         upsert_device(pool, user.id, &req.device_fp, platform).await?;
+        // 邮箱尚未验证：重发验证邮件，不打扰管理员。
+        if !user.is_email_verified() && state.cfg.smtp.is_some() {
+            let token = upsert_verification_token(pool, user.id, VERIFY_TTL_HOURS).await?;
+            notify::send_verification_email(&state.cfg, pool, &email, &token).await;
+            return Ok((
+                StatusCode::ACCEPTED,
+                Json(json!({
+                    "status": "pending_verification",
+                    "message": "该邮箱尚未验证，已重新发送验证邮件，请查收并点击邮件中的链接。"
+                })),
+            ));
+        }
+        // 已存在：根据状态返回提示，并把新设备指纹登记 + 通知管理员。
         notify::on_new_registration(&state.cfg, pool, user.id, &email, &req.device_fp, platform).await;
         let msg = match user.status.as_str() {
             "active" => "账号已存在，请直接登录；如需增加设备，已通知管理员审核。",
@@ -80,18 +93,34 @@ pub async fn register(State(state): State<AppState>, Json(req): Json<RegisterReq
 
     let password_hash = hash_password(&req.password)?;
     let now = Utc::now().to_rfc3339();
+    // 配置了 SMTP 时要求先验证邮箱；未配置则退化为免验证直接进入审核。
+    let require_verify = state.cfg.smtp.is_some();
     let user_id: i64 = sqlx::query_scalar(
-        "INSERT INTO users(email, password_hash, status, max_devices, created_at)
-         VALUES(?, ?, 'pending', ?, ?) RETURNING id",
+        "INSERT INTO users(email, password_hash, status, max_devices, email_verified, created_at)
+         VALUES(?, ?, 'pending', ?, ?, ?) RETURNING id",
     )
     .bind(&email)
     .bind(&password_hash)
     .bind(state.cfg.default_max_devices as i64)
+    .bind(if require_verify { 0i64 } else { 1i64 })
     .bind(&now)
     .fetch_one(pool)
     .await?;
 
     upsert_device(pool, user_id, &req.device_fp, platform).await?;
+
+    if require_verify {
+        let token = upsert_verification_token(pool, user_id, VERIFY_TTL_HOURS).await?;
+        notify::send_verification_email(&state.cfg, pool, &email, &token).await;
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(json!({
+                "status": "pending_verification",
+                "message": "注册成功，验证邮件已发送，请在 24 小时内点击邮件中的链接完成验证。"
+            })),
+        ));
+    }
+
     notify::on_new_registration(&state.cfg, pool, user_id, &email, &req.device_fp, platform).await;
 
     Ok((
@@ -101,6 +130,54 @@ pub async fn register(State(state): State<AppState>, Json(req): Json<RegisterReq
             "message": "注册成功，已通知管理员审核。授权后将邮件通知你。"
         })),
     ))
+}
+
+/// 邮箱验证令牌有效期（小时）
+const VERIFY_TTL_HOURS: i64 = 24;
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyQuery {
+    pub token: Option<String>,
+}
+
+/// GET /verify?token=... —— 邮箱验证链接（邮件里点开，浏览器访问）。
+pub async fn verify_email(
+    State(state): State<AppState>,
+    Query(q): Query<VerifyQuery>,
+) -> AppResult<axum::response::Html<String>> {
+    let token = q
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::bad_request("缺少验证令牌"))?;
+
+    let pool = &state.pool;
+    let user_id = consume_verification_token(pool, token)
+        .await?
+        .ok_or_else(|| AppError::bad_request("验证链接无效或已过期，请在客户端重新注册以获取新邮件"))?;
+    let user = find_user_by_id(pool, user_id)
+        .await?
+        .ok_or_else(|| AppError::bad_request("用户不存在"))?;
+
+    // 邮箱验证通过后才通知管理员审核，避免假邮箱刷屏。
+    let (fp, platform) = list_user_devices(pool, user_id)
+        .await
+        .unwrap_or_default()
+        .last()
+        .map(|d| (d.device_fp.clone(), d.platform.clone().unwrap_or_default()))
+        .unwrap_or_default();
+    notify::on_new_registration(&state.cfg, pool, user.id, &user.email, &fp, &platform).await;
+
+    Ok(axum::response::Html(format!(
+        "<!doctype html><html lang=\"zh\"><head><meta charset=\"utf-8\"><title>邮箱验证成功</title></head>\
+         <body style=\"font-family:sans-serif;max-width:32em;margin:4em auto;text-align:center\">\
+         <h2>✅ 邮箱验证成功</h2>\
+         <p>{} 已完成验证。</p>\
+         <p>管理员审核开通后会邮件通知你，届时在客户端登录即可。</p>\
+         </body></html>",
+        user.email
+    )))
 }
 
 async fn upsert_device(pool: &sqlx::SqlitePool, user_id: i64, device_fp: &str, platform: &str) -> AppResult<()> {
@@ -170,6 +247,11 @@ pub async fn login(State(state): State<AppState>, Json(req): Json<LoginRequest>)
 
     if !verify_password(&req.password, &user.password_hash) {
         return Err(AppError::unauthorized("用户名或密码错误"));
+    }
+    if !user.is_email_verified() {
+        return Err(AppError::forbidden(
+            "邮箱尚未验证，请先点击验证邮件中的链接（可重新注册以重发邮件）",
+        ));
     }
     match user.status.as_str() {
         "active" => {}

@@ -66,6 +66,7 @@ fn build_router(state: AppState) -> Router {
         .route("/healthz", get(|| async { "ok" }))
         // 客户端 API
         .route("/register", post(routes::client::register))
+        .route("/verify", get(routes::client::verify_email))
         .route("/login", post(routes::client::login))
         .route("/config", get(routes::client::get_config))
         .route("/sub/:key", get(routes::client::get_subscription))
