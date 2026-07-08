@@ -49,6 +49,24 @@ pub async fn on_new_registration(
     }
 }
 
+/// 注册第一步：给用户发送邮箱验证链接。
+pub async fn send_verification_email(cfg: &Config, pool: &SqlitePool, email_addr: &str, token: &str) {
+    db::log_event(pool, "verify_sent", Some(email_addr), "").await.ok();
+
+    let Some(smtp) = &cfg.smtp else {
+        tracing::warn!("未配置 SMTP，无法发送验证邮件：{email_addr}");
+        return;
+    };
+    let link = format!("{}/verify?token={}", cfg.public_base_url.trim_end_matches('/'), token);
+    let subject = "[Clash Verge] 请验证你的邮箱".to_string();
+    let body = format!(
+        "感谢注册。请在 24 小时内点击以下链接完成邮箱验证：\n\n{link}\n\n验证通过后管理员将尽快审核开通你的账号。\n如果这不是你本人的操作，请忽略本邮件。\n"
+    );
+    if let Err(e) = email::send(smtp, email_addr, &subject, &body).await {
+        tracing::warn!("验证邮件发送失败（{email_addr}）: {e:#}");
+    }
+}
+
 /// 授权完成：邮件通知用户其期限与可绑定设备数。
 pub async fn on_user_authorized(cfg: &Config, pool: &SqlitePool, user: &User) {
     db::log_event(

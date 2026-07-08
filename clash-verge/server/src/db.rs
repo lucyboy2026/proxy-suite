@@ -15,8 +15,17 @@ CREATE TABLE IF NOT EXISTS users (
     expires_at       TEXT,                            -- ISO-8601 (UTC)，授权后才有
     note             TEXT,
     subscription_key TEXT,                            -- 长期固定的订阅密钥（/sub/{key}）
+    email_verified   INTEGER NOT NULL DEFAULT 0,      -- 邮箱验证（0=未验证 1=已验证）
     created_at       TEXT NOT NULL,
     authorized_at    TEXT
+);
+
+-- 邮箱验证令牌（每用户一条，重发时覆盖）
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    user_id    INTEGER PRIMARY KEY,
+    token      TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS devices (
@@ -86,6 +95,14 @@ pub async fn init_pool(database_url: &str) -> Result<SqlitePool> {
     let _ = sqlx::query("ALTER TABLE users ADD COLUMN subscription_key TEXT")
         .execute(&pool)
         .await;
+    // 老库升级：新增 email_verified 列时，存量用户一律视为已验证，避免被锁在门外。
+    if sqlx::query("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await
+        .is_ok()
+    {
+        sqlx::query("UPDATE users SET email_verified = 1").execute(&pool).await.ok();
+    }
     // 列就绪后再建唯一索引（放在迁移之后，兼容旧库升级）。
     sqlx::query("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_subkey ON users(subscription_key)")
         .execute(&pool)
@@ -141,7 +158,7 @@ mod tests {
     #[tokio::test]
     async fn init_pool_creates_the_expected_tables() {
         let pool = test_pool().await;
-        for table in ["users", "devices", "settings", "events"] {
+        for table in ["users", "devices", "settings", "events", "email_verification_tokens"] {
             let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?")
                 .bind(table)
                 .fetch_one(&pool)

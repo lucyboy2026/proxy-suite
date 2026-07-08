@@ -17,6 +17,7 @@ pub struct User {
     pub note: Option<String>,
     #[serde(skip_serializing)]
     pub subscription_key: Option<String>,
+    pub email_verified: i64,
     pub created_at: String,
     pub authorized_at: Option<String>,
 }
@@ -24,6 +25,10 @@ pub struct User {
 impl User {
     pub fn is_active(&self) -> bool {
         self.status == "active"
+    }
+
+    pub fn is_email_verified(&self) -> bool {
+        self.email_verified != 0
     }
 
     pub fn is_expired(&self) -> bool {
@@ -149,6 +154,50 @@ pub async fn find_device_by_token(pool: &SqlitePool, token: &str) -> Result<Opti
     Ok(device)
 }
 
+/// 生成（或覆盖）该用户的邮箱验证令牌，返回新令牌。
+pub async fn upsert_verification_token(pool: &SqlitePool, user_id: i64, ttl_hours: i64) -> Result<String> {
+    let token = crate::auth::gen_token();
+    let now = Utc::now();
+    sqlx::query(
+        "INSERT INTO email_verification_tokens(user_id, token, created_at, expires_at)
+         VALUES(?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           token = excluded.token, created_at = excluded.created_at, expires_at = excluded.expires_at",
+    )
+    .bind(user_id)
+    .bind(&token)
+    .bind(now.to_rfc3339())
+    .bind((now + chrono::Duration::hours(ttl_hours)).to_rfc3339())
+    .execute(pool)
+    .await?;
+    Ok(token)
+}
+
+/// 消费邮箱验证令牌：有效则标记用户已验证并删除令牌，返回 user_id；无效/过期返回 None。
+pub async fn consume_verification_token(pool: &SqlitePool, token: &str) -> Result<Option<i64>> {
+    let row: Option<(i64, String)> =
+        sqlx::query_as("SELECT user_id, expires_at FROM email_verification_tokens WHERE token = ?")
+            .bind(token)
+            .fetch_optional(pool)
+            .await?;
+    let Some((user_id, expires_at)) = row else {
+        return Ok(None);
+    };
+    match parse_dt(&expires_at) {
+        Some(exp) if Utc::now() < exp => {}
+        _ => return Ok(None),
+    }
+    sqlx::query("UPDATE users SET email_verified = 1 WHERE id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM email_verification_tokens WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(Some(user_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +213,7 @@ mod tests {
             expires_at: expires_at.map(|s| s.into()),
             note: None,
             subscription_key: None,
+            email_verified: 1,
             created_at: Utc::now().to_rfc3339(),
             authorized_at: None,
         }
@@ -304,5 +354,33 @@ mod tests {
         let dev = find_device_by_token(&pool, "good-tok").await.unwrap().unwrap();
         assert_eq!(dev.user_id, uid);
         assert!(find_device_by_token(&pool, "revoked-tok").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn verification_token_round_trip_marks_user_verified() {
+        let pool = test_pool().await;
+        let uid = insert_user(&pool, "v@e.com", "pending").await;
+
+        let old = upsert_verification_token(&pool, uid, 24).await.unwrap();
+        let new = upsert_verification_token(&pool, uid, 24).await.unwrap();
+        assert_ne!(old, new);
+        // 重发后旧令牌失效，新令牌可用且仅能消费一次。
+        assert!(consume_verification_token(&pool, &old).await.unwrap().is_none());
+        assert_eq!(consume_verification_token(&pool, &new).await.unwrap(), Some(uid));
+        assert!(consume_verification_token(&pool, &new).await.unwrap().is_none());
+
+        let user = find_user_by_id(&pool, uid).await.unwrap().unwrap();
+        assert!(user.is_email_verified());
+    }
+
+    #[tokio::test]
+    async fn verification_token_rejects_expired() {
+        let pool = test_pool().await;
+        let uid = insert_user(&pool, "x@e.com", "pending").await;
+        let token = upsert_verification_token(&pool, uid, -1).await.unwrap();
+        assert!(consume_verification_token(&pool, &token).await.unwrap().is_none());
+
+        let user = find_user_by_id(&pool, uid).await.unwrap().unwrap();
+        assert!(!user.is_email_verified());
     }
 }
