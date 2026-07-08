@@ -281,6 +281,7 @@ interface INodeAuthStatus {
   max_devices?: number | null
   active_devices?: number | null
   expired: boolean
+  subscription_url: string
 }
 
 interface IProfileItem {
