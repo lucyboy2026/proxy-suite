@@ -15,11 +15,14 @@ import { useTranslation } from 'react-i18next'
 
 import { BaseDialog, DialogRef } from '@/components/base'
 import {
+  getProfiles,
+  importProfile,
   nodeAuthGetDeviceFp,
   nodeAuthGetStatus,
   nodeAuthLogin,
   nodeAuthLogout,
   nodeAuthRegister,
+  patchProfilesConfig,
 } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
 
@@ -62,6 +65,27 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
     close: () => setOpen(false),
   }))
 
+  // 登录成功后自动导入并激活服务端下发的固定订阅（已存在则仅激活）
+  const autoImportSubscription = async (subUrl: string) => {
+    if (!subUrl) return
+    const profiles = await getProfiles()
+    const existing = profiles.items?.find((i) => i?.url === subUrl)
+    if (existing?.uid) {
+      if (profiles.current !== existing.uid) {
+        await patchProfilesConfig({ current: existing.uid })
+      }
+      return
+    }
+    // 登录刚直连成功，订阅也直连拉取，避免依赖尚未就绪的代理
+    await importProfile(subUrl, { with_proxy: false })
+    const updated = await getProfiles()
+    const item = updated.items?.find((i) => i?.url === subUrl)
+    if (item?.uid) {
+      await patchProfilesConfig({ current: item.uid })
+    }
+    showNotice.success('shared.feedback.notifications.importSuccess')
+  }
+
   const onLogin = useLockFn(async () => {
     if (!server.trim()) {
       showNotice.error('settings.sections.nodeAuth.messages.serverRequired')
@@ -83,6 +107,14 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
       onChanged?.(st)
       showNotice.success('settings.sections.nodeAuth.messages.loginSuccess')
       setOpen(false)
+      try {
+        await autoImportSubscription(st.subscription_url)
+      } catch (err) {
+        showNotice.error(
+          'profiles.page.feedback.notifications.importFail',
+          String(err),
+        )
+      }
     } catch (err) {
       showNotice.error(
         'settings.sections.nodeAuth.messages.loginFailed',

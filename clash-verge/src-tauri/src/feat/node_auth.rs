@@ -36,6 +36,9 @@ pub struct NodeAuthState {
     pub max_devices: Option<u32>,
     #[serde(default)]
     pub active_devices: Option<u32>,
+    /// 服务端下发的固定订阅链接（/sub/{key}）
+    #[serde(default)]
+    pub subscription_url: String,
 }
 
 /// 回传前端的注册结果（仅含服务端状态与提示文案）。
@@ -60,6 +63,8 @@ pub struct NodeAuthStatus {
     pub active_devices: Option<u32>,
     /// Token 是否已过期
     pub expired: bool,
+    /// 固定订阅链接（登录后前端据此自动导入订阅）
+    pub subscription_url: String,
 }
 
 /// Auth Server `POST /login` 的请求体。
@@ -101,6 +106,8 @@ struct LoginResponse {
     max_devices: Option<u32>,
     #[serde(default)]
     active_devices: Option<u32>,
+    #[serde(default)]
+    subscription_url: String,
 }
 
 /// `node-auth.json` 的绝对路径。
@@ -281,6 +288,7 @@ pub async fn login(server: &str, username: &str, password: &str) -> Result<NodeA
         platform: platform.to_string(),
         max_devices: parsed.max_devices,
         active_devices: parsed.active_devices,
+        subscription_url: parsed.subscription_url,
     };
     save_state(&state)?;
     logging!(info, Type::Config, "节点账号登录成功: {}", state.username);
@@ -385,6 +393,7 @@ fn to_status(state: &NodeAuthState) -> NodeAuthStatus {
         max_devices: state.max_devices,
         active_devices: state.active_devices,
         expired: is_expired(&state.expires_at),
+        subscription_url: state.subscription_url.clone(),
     }
 }
 
