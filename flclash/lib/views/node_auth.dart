@@ -8,6 +8,7 @@ import 'package:fl_clash/state.dart';
 import 'package:fl_clash/widgets/scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Returns the Chinese string on a zh locale, otherwise the English string.
 /// Keeps this fork's new screens self-contained without touching the
@@ -65,6 +66,18 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _openForgotPassword() {
+    final base = _serverController.text.trim().replaceAll(RegExp(r'/+$'), '');
+    if (base.isEmpty) {
+      _snack(_t(context, '请先填写服务器地址', 'Enter the server address first'));
+      return;
+    }
+    launchUrl(
+      Uri.parse('$base/forgot-password'),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   String? _validateInputs({required bool requirePassword}) {
@@ -296,6 +309,14 @@ class _NodeAuthViewState extends ConsumerState<NodeAuthView> {
                 ),
               ),
             ),
+            if (!_isRegister)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: _busy ? null : _openForgotPassword,
+                  child: Text(_t(context, '忘记密码？', 'Forgot password?')),
+                ),
+              ),
             const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: _busy
