@@ -417,6 +417,7 @@ export const translationKeys = [
   'settings.sections.nodeAuth.actions.register',
   'settings.sections.nodeAuth.actions.logout',
   'settings.sections.nodeAuth.actions.relogin',
+  'settings.sections.nodeAuth.actions.forgotPassword',
   'settings.sections.nodeAuth.messages.loginSuccess',
   'settings.sections.nodeAuth.messages.loginFailed',
   'settings.sections.nodeAuth.messages.registerSuccess',

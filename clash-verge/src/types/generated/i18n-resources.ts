@@ -1175,6 +1175,7 @@ export interface TranslationResources {
         }
         nodeAuth: {
           actions: {
+            forgotPassword: string
             login: string
             logout: string
             register: string
