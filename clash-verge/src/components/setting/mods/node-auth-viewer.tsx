@@ -22,6 +22,7 @@ import {
   nodeAuthLogin,
   nodeAuthLogout,
   nodeAuthRegister,
+  openWebUrl,
   patchProfilesConfig,
 } from '@/services/cmds'
 import { showNotice } from '@/services/notice-service'
@@ -291,6 +292,28 @@ export function NodeAuthViewer({ ref, onChanged }: Props) {
         onChange={(e) => setPassword(e.target.value)}
         disabled={isWorking}
       />
+
+      {!loggedIn && mode === 'login' && (
+        <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'flex-end' }}>
+          <Typography
+            component="button"
+            variant="body2"
+            color="primary"
+            onClick={() => {
+              const base = server.trim().replace(/\/+$/, '')
+              if (base) openWebUrl(`${base}/forgot-password`)
+            }}
+            sx={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 0,
+            }}
+          >
+            {t('settings.sections.nodeAuth.actions.forgotPassword')}
+          </Typography>
+        </Box>
+      )}
 
       {loggedIn && (
         <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>

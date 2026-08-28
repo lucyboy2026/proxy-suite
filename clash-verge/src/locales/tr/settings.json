@@ -168,7 +168,8 @@
       "actions": {
         "login": "Sign in",
         "logout": "Sign out",
-        "relogin": "Sign in again"
+        "relogin": "Sign in again",
+        "forgotPassword": "Şifrenizi mi unuttunuz?"
       },
       "messages": {
         "loginSuccess": "Signed in",

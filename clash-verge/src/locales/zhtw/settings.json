@@ -168,7 +168,8 @@
       "actions": {
         "login": "Sign in",
         "logout": "Sign out",
-        "relogin": "Sign in again"
+        "relogin": "Sign in again",
+        "forgotPassword": "忘記密碼？"
       },
       "messages": {
         "loginSuccess": "Signed in",

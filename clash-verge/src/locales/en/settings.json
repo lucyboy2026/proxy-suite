@@ -173,7 +173,8 @@
         "login": "Sign in",
         "register": "Register",
         "logout": "Sign out",
-        "relogin": "Sign in again"
+        "relogin": "Sign in again",
+        "forgotPassword": "Forgot password?"
       },
       "messages": {
         "loginSuccess": "Signed in",

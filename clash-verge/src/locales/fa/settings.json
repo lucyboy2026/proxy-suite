@@ -168,7 +168,8 @@
       "actions": {
         "login": "Sign in",
         "logout": "Sign out",
-        "relogin": "Sign in again"
+        "relogin": "Sign in again",
+        "forgotPassword": "رمز عبور را فراموش کرده‌اید؟"
       },
       "messages": {
         "loginSuccess": "Signed in",
