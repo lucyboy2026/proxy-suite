@@ -529,7 +529,7 @@ pub async fn hysteria_auth(State(state): State<AppState>, Json(req): Json<Hyster
 
 // ===== 密码找回（网页自助，与客户端无关） =====
 
-const RESET_TTL_HOURS: i64 = 1;
+const RESET_TTL_HOURS: i64 = 2;
 
 #[derive(Debug, Deserialize)]
 pub struct ForgotPasswordForm {
@@ -560,7 +560,7 @@ pub async fn forgot_password_page() -> axum::response::Html<String> {
     axum::response::Html(reset_page_shell(
         "忘记密码",
         "<h2>忘记密码</h2>\
-         <p>输入注册邮箱，我们会发送一封重置密码邮件（1 小时内有效）。</p>\
+         <p>输入注册邮箱，我们会发送一封重置密码邮件（2 小时内有效）。</p>\
          <form method=\"post\" action=\"/forgot-password\">\
          <input type=\"email\" name=\"email\" placeholder=\"注册邮箱\" required style=\"width:100%;padding:.6em\">\
          <button type=\"submit\" style=\"margin-top:1em;padding:.6em 1.2em\">发送重置邮件</button>\
@@ -582,7 +582,7 @@ pub async fn forgot_password_submit(
     }
     Ok(axum::response::Html(reset_page_shell(
         "重置邮件已发送",
-        "<h2>邮件已发送</h2><p>如果该邮箱已注册，你将在几分钟内收到密码重置邮件，请按邮件指引操作（1 小时内有效）。</p>",
+        "<h2>邮件已发送</h2><p>如果该邮箱已注册，你将在几分钟内收到密码重置邮件，请按邮件指引操作（2 小时内有效）。</p>",
     )))
 }
 
