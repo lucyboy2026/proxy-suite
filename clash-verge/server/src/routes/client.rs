@@ -12,10 +12,9 @@ use crate::auth::{gen_token, hash_password, verify_password};
 use crate::clash;
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    consume_verification_token, count_user_devices, ensure_subscription_key, find_device, find_device_by_token,
-    find_user_by_email, find_user_by_id, find_user_by_subscription_key, latest_active_token, list_user_devices,
-    consume_password_reset_token, parse_dt, peek_password_reset_token, upsert_password_reset_token,
-    upsert_verification_token,
+    consume_password_reset_token, consume_verification_token, count_user_devices, ensure_subscription_key, find_device,
+    find_device_by_token, find_user_by_email, find_user_by_id, find_user_by_subscription_key, latest_active_token,
+    list_user_devices, parse_dt, peek_password_reset_token, upsert_password_reset_token, upsert_verification_token,
 };
 use crate::notify;
 use crate::online::client_ip;
@@ -528,7 +527,6 @@ pub async fn hysteria_auth(State(state): State<AppState>, Json(req): Json<Hyster
     ok_resp(true, &id, "")
 }
 
-
 // ===== 密码找回（网页自助，与客户端无关） =====
 
 const RESET_TTL_HOURS: i64 = 1;
@@ -635,7 +633,9 @@ pub async fn reset_password_submit(
         .await?
         .map(|u| u.email)
         .unwrap_or_default();
-    crate::db::log_event(&state.pool, "pwd_reset_done", Some(&email), "").await.ok();
+    crate::db::log_event(&state.pool, "pwd_reset_done", Some(&email), "")
+        .await
+        .ok();
     Ok(axum::response::Html(reset_page_shell(
         "密码已重置",
         "<h2>密码已重置</h2><p>请回到客户端（Clash Verge / FlClash）用新密码登录。</p>",

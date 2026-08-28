@@ -75,7 +75,11 @@ pub async fn send_password_reset_email(cfg: &Config, pool: &SqlitePool, email_ad
         tracing::warn!("未配置 SMTP，无法发送密码重置邮件：{email_addr}");
         return;
     };
-    let link = format!("{}/reset-password?token={}", cfg.public_base_url.trim_end_matches('/'), token);
+    let link = format!(
+        "{}/reset-password?token={}",
+        cfg.public_base_url.trim_end_matches('/'),
+        token
+    );
     let subject = "[Clash Verge] 密码重置".to_string();
     let body = format!(
         "我们收到了你的密码重置请求。请在 1 小时内点击以下链接设置新密码：\n\n{link}\n\n如果这不是你本人的操作，请忽略本邮件，你的密码不会被更改。\n"
