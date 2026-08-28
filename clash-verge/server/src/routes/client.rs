@@ -1,6 +1,6 @@
 //! 客户端 API：注册 / 登录 / 拉取订阅 / hysteria2 鉴权回调。
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Form, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -14,7 +14,8 @@ use crate::error::{AppError, AppResult};
 use crate::models::{
     consume_verification_token, count_user_devices, ensure_subscription_key, find_device, find_device_by_token,
     find_user_by_email, find_user_by_id, find_user_by_subscription_key, latest_active_token, list_user_devices,
-    parse_dt, upsert_verification_token,
+    consume_password_reset_token, parse_dt, peek_password_reset_token, upsert_password_reset_token,
+    upsert_verification_token,
 };
 use crate::notify;
 use crate::online::client_ip;
@@ -525,4 +526,118 @@ pub async fn hysteria_auth(State(state): State<AppState>, Json(req): Json<Hyster
     // 标识用「邮箱#设备指纹」，便于服务端按用户限速/统计。
     let id = format!("{}#{}", user.email, device.device_fp);
     ok_resp(true, &id, "")
+}
+
+
+// ===== 密码找回（网页自助，与客户端无关） =====
+
+const RESET_TTL_HOURS: i64 = 1;
+
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordForm {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordQuery {
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordForm {
+    pub token: String,
+    pub password: String,
+    pub password2: String,
+}
+
+fn reset_page_shell(title: &str, inner: &str) -> String {
+    format!(
+        "<!doctype html><html lang=\"zh\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title></head>\
+         <body style=\"font-family:sans-serif;max-width:26em;margin:4em auto\">{inner}</body></html>"
+    )
+}
+
+/// GET /forgot-password —— 忘记密码：输入邮箱。
+pub async fn forgot_password_page() -> axum::response::Html<String> {
+    axum::response::Html(reset_page_shell(
+        "忘记密码",
+        "<h2>忘记密码</h2>\
+         <p>输入注册邮箱，我们会发送一封重置密码邮件（1 小时内有效）。</p>\
+         <form method=\"post\" action=\"/forgot-password\">\
+         <input type=\"email\" name=\"email\" placeholder=\"注册邮箱\" required style=\"width:100%;padding:.6em\">\
+         <button type=\"submit\" style=\"margin-top:1em;padding:.6em 1.2em\">发送重置邮件</button>\
+         </form>",
+    ))
+}
+
+/// POST /forgot-password —— 发送重置邮件（无论邮箱是否存在都返回同样提示，防枚举）。
+pub async fn forgot_password_submit(
+    State(state): State<AppState>,
+    Form(f): Form<ForgotPasswordForm>,
+) -> AppResult<axum::response::Html<String>> {
+    let email = f.email.trim().to_lowercase();
+    if email.contains('@') {
+        if let Some(user) = find_user_by_email(&state.pool, &email).await? {
+            let token = upsert_password_reset_token(&state.pool, user.id, RESET_TTL_HOURS).await?;
+            notify::send_password_reset_email(&state.cfg, &state.pool, &email, &token).await;
+        }
+    }
+    Ok(axum::response::Html(reset_page_shell(
+        "重置邮件已发送",
+        "<h2>邮件已发送</h2><p>如果该邮箱已注册，你将在几分钟内收到密码重置邮件，请按邮件指引操作（1 小时内有效）。</p>",
+    )))
+}
+
+/// GET /reset-password?token=... —— 设置新密码页面（邮件链接点开）。
+pub async fn reset_password_page(
+    State(state): State<AppState>,
+    Query(q): Query<ResetPasswordQuery>,
+) -> AppResult<axum::response::Html<String>> {
+    let token = q
+        .token
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::bad_request("缺少重置令牌"))?;
+    if peek_password_reset_token(&state.pool, token).await?.is_none() {
+        return Err(AppError::bad_request("重置链接无效或已过期，请重新发起「忘记密码」"));
+    }
+    Ok(axum::response::Html(reset_page_shell(
+        "设置新密码",
+        &format!(
+            "<h2>设置新密码</h2>\
+             <form method=\"post\" action=\"/reset-password\">\
+             <input type=\"hidden\" name=\"token\" value=\"{token}\">\
+             <input type=\"password\" name=\"password\" placeholder=\"新密码（至少 6 位）\" required minlength=\"6\" style=\"width:100%;padding:.6em\">\
+             <input type=\"password\" name=\"password2\" placeholder=\"再输一遍\" required minlength=\"6\" style=\"width:100%;padding:.6em;margin-top:.6em\">\
+             <button type=\"submit\" style=\"margin-top:1em;padding:.6em 1.2em\">确认重置</button>\
+             </form>"
+        ),
+    )))
+}
+
+/// POST /reset-password —— 提交新密码。
+pub async fn reset_password_submit(
+    State(state): State<AppState>,
+    Form(f): Form<ResetPasswordForm>,
+) -> AppResult<axum::response::Html<String>> {
+    if f.password.len() < 6 {
+        return Err(AppError::bad_request("密码至少 6 位"));
+    }
+    if f.password != f.password2 {
+        return Err(AppError::bad_request("两次输入的密码不一致"));
+    }
+    let hash = hash_password(&f.password)?;
+    let user_id = consume_password_reset_token(&state.pool, f.token.trim(), &hash)
+        .await?
+        .ok_or_else(|| AppError::bad_request("重置链接无效或已过期，请重新发起「忘记密码」"))?;
+    let email = find_user_by_id(&state.pool, user_id)
+        .await?
+        .map(|u| u.email)
+        .unwrap_or_default();
+    crate::db::log_event(&state.pool, "pwd_reset_done", Some(&email), "").await.ok();
+    Ok(axum::response::Html(reset_page_shell(
+        "密码已重置",
+        "<h2>密码已重置</h2><p>请回到客户端（Clash Verge / FlClash）用新密码登录。</p>",
+    )))
 }

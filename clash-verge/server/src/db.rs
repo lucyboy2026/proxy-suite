@@ -28,6 +28,14 @@ CREATE TABLE IF NOT EXISTS email_verification_tokens (
     expires_at TEXT NOT NULL
 );
 
+-- 密码重置令牌（每用户一条，重发时覆盖）
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    user_id    INTEGER PRIMARY KEY,
+    token      TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS devices (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id          INTEGER NOT NULL,

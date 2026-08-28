@@ -198,6 +198,58 @@ pub async fn consume_verification_token(pool: &SqlitePool, token: &str) -> Resul
     Ok(Some(user_id))
 }
 
+/// 生成（或覆盖）该用户的密码重置令牌，返回新令牌。
+pub async fn upsert_password_reset_token(pool: &SqlitePool, user_id: i64, ttl_hours: i64) -> Result<String> {
+    let token = crate::auth::gen_token();
+    let now = Utc::now();
+    sqlx::query(
+        "INSERT INTO password_reset_tokens(user_id, token, created_at, expires_at)
+         VALUES(?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           token = excluded.token, created_at = excluded.created_at, expires_at = excluded.expires_at",
+    )
+    .bind(user_id)
+    .bind(&token)
+    .bind(now.to_rfc3339())
+    .bind((now + chrono::Duration::hours(ttl_hours)).to_rfc3339())
+    .execute(pool)
+    .await?;
+    Ok(token)
+}
+
+/// 查看密码重置令牌是否有效（不消费）；有效返回 user_id。
+pub async fn peek_password_reset_token(pool: &SqlitePool, token: &str) -> Result<Option<i64>> {
+    let row: Option<(i64, String)> =
+        sqlx::query_as("SELECT user_id, expires_at FROM password_reset_tokens WHERE token = ?")
+            .bind(token)
+            .fetch_optional(pool)
+            .await?;
+    let Some((user_id, expires_at)) = row else {
+        return Ok(None);
+    };
+    match parse_dt(&expires_at) {
+        Some(exp) if Utc::now() < exp => Ok(Some(user_id)),
+        _ => Ok(None),
+    }
+}
+
+/// 消费密码重置令牌并写入新密码哈希；成功返回 user_id，无效/过期返回 None。
+pub async fn consume_password_reset_token(pool: &SqlitePool, token: &str, password_hash: &str) -> Result<Option<i64>> {
+    let Some(user_id) = peek_password_reset_token(pool, token).await? else {
+        return Ok(None);
+    };
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(password_hash)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    sqlx::query("DELETE FROM password_reset_tokens WHERE user_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(Some(user_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

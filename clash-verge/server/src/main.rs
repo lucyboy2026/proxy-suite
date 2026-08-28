@@ -67,6 +67,14 @@ fn build_router(state: AppState) -> Router {
         // 客户端 API
         .route("/register", post(routes::client::register))
         .route("/verify", get(routes::client::verify_email))
+        .route(
+            "/forgot-password",
+            get(routes::client::forgot_password_page).post(routes::client::forgot_password_submit),
+        )
+        .route(
+            "/reset-password",
+            get(routes::client::reset_password_page).post(routes::client::reset_password_submit),
+        )
         .route("/login", post(routes::client::login))
         .route("/config", get(routes::client::get_config))
         .route("/sub/:key", get(routes::client::get_subscription))
