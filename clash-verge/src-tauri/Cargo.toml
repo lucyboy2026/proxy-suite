@@ -1,6 +1,6 @@
 [package]
 name = "clash-verge"
-version = "2.5.6"
+version = "2.5.7"
 description = "clash verge"
 authors = ["zzzgydi", "Tunglies", "wonfen", "MystiPanda"]
 license = "GPL-3.0-only"
@@ -100,7 +100,7 @@ clash_verge_logger = { git = "https://github.com/clash-verge-rev/clash-verge-log
 async-trait = "0.1.89"
 clash_verge_service_ipc = { version = "2.3.0", features = [
   "client",
-], git = "https://github.com/clash-verge-rev/clash-verge-service-ipc" }
+], git = "https://github.com/clash-verge-rev/clash-verge-service-ipc", rev = "808f730f90e8b905310187f8c7746eeff78d720e" }
 arc-swap = "1.9.1"
 tokio-rustls = "0.26.4"
 rustls = { version = "0.23.40", features = ["ring"] }

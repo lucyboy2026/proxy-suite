@@ -602,46 +602,18 @@ function parseServiceVersionFromUrl(url) {
   return match ? decodeURIComponent(match[1]) : null
 }
 
+// PINNED: 固定使用 clash-verge-service-ipc v2.3.0，必须与 App 编译进的 ipc 协议保持一致
+// （见 src-tauri/Cargo.toml 的 clash_verge_service_ipc rev=808f730f，其 CARGO_PKG_VERSION=2.3.0）。
+// 若两边版本不一致，会出现 "service protocol version does not match" / 内核通信错误。
+// 升级服务版本时，务必同步更新 Cargo.toml 里 ipc 依赖的 rev/tag 到同一版本。
+const SERVICE_VERSION_PINNED = 'v2.3.0'
+
 async function getLatestServiceVersion() {
-  if (!FORCE) {
-    const cached = await getCachedVersion('SERVICE_VERSION')
-    if (cached) {
-      SERVICE_VERSION = cached
-      return
-    }
-  }
-
-  const options = {}
-  const httpProxy =
-    process.env.HTTP_PROXY ||
-    process.env.http_proxy ||
-    process.env.HTTPS_PROXY ||
-    process.env.https_proxy
-  if (httpProxy) options.agent = new HttpsProxyAgent(httpProxy)
-
-  try {
-    const response = await fetch(SERVICE_LATEST_URL, {
-      ...options,
-      method: 'GET',
-      redirect: 'follow',
-    })
-    if (!response.ok)
-      throw new Error(
-        `Failed to fetch ${SERVICE_LATEST_URL}: ${response.status}`,
-      )
-
-    SERVICE_VERSION = parseServiceVersionFromUrl(response.url)
-    if (!SERVICE_VERSION)
-      throw new Error(
-        `Unable to resolve service release tag from ${response.url}`,
-      )
-
-    log_info(`Latest service version: ${SERVICE_VERSION}`)
-    await setCachedVersion('SERVICE_VERSION', SERVICE_VERSION)
-  } catch (err) {
-    log_error('Error fetching latest service version:', err.message)
-    process.exit(1)
-  }
+  // 不再取 upstream 最新 Release，改为固定版本，避免与 App 协议漂移
+  void SERVICE_LATEST_URL
+  void parseServiceVersionFromUrl
+  SERVICE_VERSION = SERVICE_VERSION_PINNED
+  log_info(`Using pinned service version: ${SERVICE_VERSION}`)
 }
 
 async function findExtractedFile(dir, fileName) {
